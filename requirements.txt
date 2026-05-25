@@ -1,0 +1,12 @@
+# Conexión con exchanges (Binance, Kraken, etc.)
+ccxt==4.4.61
+
+# Manipulación de datos y cálculo de indicadores
+pandas==2.2.3
+pandas-ta==0.3.14b
+
+# Llamadas HTTP a APIs externas (CoinGecko)
+requests==2.32.3
+
+# Carga de variables de entorno desde .env
+python-dotenv==1.0.1

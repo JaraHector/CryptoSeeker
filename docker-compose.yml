@@ -1,0 +1,8 @@
+services:
+  cryptoseeker:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    restart: "no"
