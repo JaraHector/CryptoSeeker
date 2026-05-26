@@ -3,7 +3,7 @@ ccxt==4.4.61
 
 # Manipulación de datos y cálculo de indicadores
 pandas==2.2.3
-pandas-ta==0.3.14b
+# pandas-ta se agrega cuando se necesite (tiene conflictos con pandas 2.x)
 
 # Llamadas HTTP a APIs externas (CoinGecko)
 requests==2.32.3
