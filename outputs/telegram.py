@@ -58,7 +58,11 @@ def _send_message(token: str, chat_id: str, texto: str) -> None:
         "parse_mode": "Markdown",
     }
     response = requests.post(url, json=payload, timeout=10)
-    response.raise_for_status()
+
+    if not response.ok:
+        # Mostramos el error de Telegram sin exponer el token en la URL
+        error_detail = response.json().get("description", "error desconocido")
+        raise RuntimeError(f"Telegram API error {response.status_code}: {error_detail}")
 
 
 def _load_last_signal() -> str | None:
