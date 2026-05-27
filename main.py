@@ -10,7 +10,7 @@ Flujo:
   5. Imprimir el reporte en consola
 """
 
-from data.binance_client import get_ohlcv
+from data.exchange_client import get_ohlcv
 from pipeline.indicators import add_sma, get_latest_indicators
 from pipeline.dominance import get_btc_dominance
 from agents.analyzer import analizar_btc, analizar_dominance
