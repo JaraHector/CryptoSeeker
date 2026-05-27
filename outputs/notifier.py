@@ -173,6 +173,11 @@ def formatear_para_telegram(analisis_btc: dict, analisis_dominance: dict) -> str
         "ESPERAR_CONFIRMACION": "⏳",
         "FUERA_DE_ZONA":        "📊",
     }
+    etiquetas = {
+        "ACUMULAR":             "ACUMULAR",
+        "ESPERAR_CONFIRMACION": "ESPERAR CONFIRMACION",
+        "FUERA_DE_ZONA":        "FUERA DE ZONA",
+    }
     emoji = emojis.get(signal, "⚪")
 
     dir200w = "sobre" if dist200w >= 0 else "bajo"
@@ -184,7 +189,7 @@ def formatear_para_telegram(analisis_btc: dict, analisis_dominance: dict) -> str
         f"*Precio:* ${precio:,.2f}\n\n"
         f"*SMA200 weekly:* ${sma200w:,.2f} ({abs(dist200w):.1f}% {dir200w})\n"
         f"*SMA200 daily:*  ${sma200d:,.2f} ({abs(dist200d):.1f}% {dir200d})\n\n"
-        f"*Señal:* {signal}\n\n"
+        f"*Señal:* {etiquetas.get(signal, signal)}\n\n"
         f"*Dominance ajustada:* {analisis_dominance['dominance_adjusted_pct']}%\n"
         f"_{analisis_dominance['interpretacion']}_"
     )
