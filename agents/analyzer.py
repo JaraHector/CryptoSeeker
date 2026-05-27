@@ -1,67 +1,65 @@
 """
 Módulo de análisis e interpretación de indicadores.
-Este es el "cerebro" del proyecto: toma los números calculados por el pipeline
-y los convierte en señales y conclusiones en lenguaje natural.
-En el futuro, acá se integrará un LLM (ej: Claude) para análisis más sofisticados.
+Toma los números del pipeline y genera señales y conclusiones.
+En el futuro se integrará un LLM (Claude) para análisis más sofisticados.
 """
 
-# Umbrales de alerta para la distancia entre el precio de BTC y la SMA200
-# Cuando BTC está dentro de estos rangos, se dispara una alerta
-ALERTA_ZONA_ATENCION_PCT = 15.0   # BTC está a menos del 15% de la SMA200
-ALERTA_ZONA_CRITICA_PCT = 10.0    # BTC está a menos del 10% de la SMA200
+# Umbrales SMA200 daily: distancia entre precio y SMA200 daily
+ALERTA_ATENCION_DAILY_PCT  = 15.0   # menos del 15% sobre SMA200 daily → atención
+ALERTA_CRITICO_DAILY_PCT   = 10.0   # menos del 10% sobre SMA200 daily → crítico
+
+# Umbral SMA200 weekly: dentro del 20% sobre la SMA200 weekly = zona de acumulación macro
+ZONA_ACUMULACION_WEEKLY_PCT = 20.0
 
 
 def analizar_btc(indicadores: dict) -> dict:
     """
-    Analiza los indicadores de BTC y genera señales y conclusiones.
+    Analiza los indicadores de BTC (daily + weekly) y genera señales combinadas.
 
     Args:
-        indicadores: Diccionario generado por get_latest_indicators() del pipeline.
+        indicadores: Diccionario con precio, SMAs daily y SMA200 weekly.
 
     Returns:
-        Diccionario con el análisis: señal, nivel de alerta y descripción.
+        Diccionario con análisis completo: contexto macro, tendencia, señal combinada.
     """
-    precio = indicadores["precio_actual"]
-    distancia_sma200 = indicadores.get("distancia_sma200_pct")
-    distancia_sma50 = indicadores.get("distancia_sma50_pct")
-    sma50 = indicadores.get("sma_50")
-    sma200 = indicadores.get("sma_200")
+    precio           = indicadores["precio_actual"]
+    sma50_daily      = indicadores.get("sma_50_daily")
+    sma200_daily     = indicadores.get("sma_200_daily")
+    sma200_weekly    = indicadores.get("sma_200_weekly")
+    dist_sma50_daily  = indicadores.get("distancia_sma50_daily_pct")
+    dist_sma200_daily = indicadores.get("distancia_sma200_daily_pct")
+    dist_sma200_weekly = indicadores.get("distancia_sma200_weekly_pct")
 
-    # Determinamos el nivel de alerta según la distancia a la SMA200
-    nivel_alerta = _evaluar_nivel_alerta(distancia_sma200)
-
-    # Determinamos la tendencia comparando precio vs SMAs
-    tendencia = _evaluar_tendencia(precio, sma50, sma200)
-
-    # Construimos la descripción en lenguaje natural
-    descripcion = _generar_descripcion_btc(precio, sma50, sma200, distancia_sma50, distancia_sma200, tendencia, nivel_alerta)
+    contexto_macro   = _evaluar_contexto_macro(dist_sma200_weekly)
+    tendencia_daily  = _evaluar_tendencia_daily(precio, sma50_daily, sma200_daily)
+    nivel_alerta     = _evaluar_nivel_alerta_daily(dist_sma200_daily)
+    signal_combinada = _evaluar_signal_combinada(contexto_macro, tendencia_daily)
 
     return {
-        "activo": "BTC",
-        "nivel_alerta": nivel_alerta,
-        "tendencia": tendencia,
-        "descripcion": descripcion,
-        "requiere_atencion": nivel_alerta in ["ATENCION", "CRITICO"],
+        "activo":               "BTC",
+        "precio_actual":        precio,
+        "sma_50_daily":         sma50_daily,
+        "sma_200_daily":        sma200_daily,
+        "sma_200_weekly":       sma200_weekly,
+        "dist_sma50_daily_pct":  dist_sma50_daily,
+        "dist_sma200_daily_pct": dist_sma200_daily,
+        "dist_sma200_weekly_pct": dist_sma200_weekly,
+        "contexto_macro":       contexto_macro,
+        "tendencia_daily":      tendencia_daily,
+        "nivel_alerta":         nivel_alerta,
+        "signal_combinada":     signal_combinada,
+        "requiere_atencion":    contexto_macro in ["ZONA_ACUMULACION", "BAJO_SMA200_WEEKLY"],
     }
 
 
 def analizar_dominance(dominance_data: dict) -> dict:
     """
     Analiza los datos de dominance de BTC y genera una interpretación.
-
-    Args:
-        dominance_data: Diccionario generado por get_btc_dominance() del pipeline.
-
-    Returns:
-        Diccionario con la interpretación de la dominance.
     """
     std = dominance_data["dominance_standard_pct"]
     adj = dominance_data["dominance_adjusted_pct"]
-
-    # La diferencia entre ambas dominances indica cuánto capital hay en stablecoins
     diferencia = round(adj - std, 2)
 
-    # Interpretamos qué significa el nivel actual de dominance ajustada
     if adj > 60:
         interpretacion = "BTC domina fuertemente el mercado. Altcoins en general débiles."
     elif adj > 55:
@@ -71,90 +69,91 @@ def analizar_dominance(dominance_data: dict) -> dict:
     else:
         interpretacion = "Altcoins ganando terreno vs BTC. Posible temporada de altcoins."
 
+    # Nota sobre altcoins: relevante cuando se agreguen TAO y Venice
+    altcoins_favorable = adj > 55
+
     return {
-        "dominance_standard_pct": std,
-        "dominance_adjusted_pct": adj,
-        "diferencia_pct": diferencia,
-        "interpretacion": interpretacion,
+        "dominance_standard_pct":  std,
+        "dominance_adjusted_pct":  adj,
+        "diferencia_pct":          diferencia,
+        "interpretacion":          interpretacion,
+        "altcoins_favorable":      altcoins_favorable,
     }
 
 
-def _evaluar_nivel_alerta(distancia_sma200: float) -> str:
+# ── Funciones internas ────────────────────────────────────────────────────────
+
+def _evaluar_contexto_macro(dist_sma200_weekly: float) -> str:
     """
-    Determina el nivel de alerta según la distancia porcentual a la SMA200.
-    Solo aplica cuando BTC está POR ENCIMA de la SMA200 (distancia positiva).
+    Evalúa el contexto macro usando la SMA200 weekly.
+    Esta es la referencia histórica de largo plazo para acumulación.
     """
-    if distancia_sma200 is None:
+    if dist_sma200_weekly is None:
         return "SIN_DATOS"
-
-    if distancia_sma200 < 0:
-        # BTC está por debajo de la SMA200, zona de peligro/oportunidad según contexto
-        return "DEBAJO_SMA200"
-
-    if distancia_sma200 <= ALERTA_ZONA_CRITICA_PCT:
-        return "CRITICO"      # Dentro del 10%: muy cerca de la SMA200
-
-    if distancia_sma200 <= ALERTA_ZONA_ATENCION_PCT:
-        return "ATENCION"     # Entre 10% y 15%: zona de atención
-
-    return "NORMAL"           # Más del 15% sobre la SMA200
+    if dist_sma200_weekly < 0:
+        # BTC por debajo de la SMA200 weekly: zona extrema, muy rara históricamente
+        return "BAJO_SMA200_WEEKLY"
+    if dist_sma200_weekly <= ZONA_ACUMULACION_WEEKLY_PCT:
+        # Dentro del 20% sobre la SMA200 weekly: zona de acumulación macro
+        return "ZONA_ACUMULACION"
+    return "MERCADO_ALTO"
 
 
-def _evaluar_tendencia(precio: float, sma50: float, sma200: float) -> str:
+def _evaluar_nivel_alerta_daily(dist_sma200_daily: float) -> str:
     """
-    Determina la tendencia del precio comparando su posición relativa a las SMAs.
+    Evalúa el nivel de alerta según la distancia a la SMA200 daily.
+    """
+    if dist_sma200_daily is None:
+        return "SIN_DATOS"
+    if dist_sma200_daily < 0:
+        return "DEBAJO_SMA200_DAILY"
+    if dist_sma200_daily <= ALERTA_CRITICO_DAILY_PCT:
+        return "CRITICO"
+    if dist_sma200_daily <= ALERTA_ATENCION_DAILY_PCT:
+        return "ATENCION"
+    return "NORMAL"
+
+
+def _evaluar_tendencia_daily(precio: float, sma50: float, sma200: float) -> str:
+    """
+    Determina la tendencia comparando precio vs SMA50 y SMA200 daily.
     """
     if sma50 is None or sma200 is None:
         return "SIN_DATOS"
 
-    precio_sobre_sma200 = precio > sma200
-    precio_sobre_sma50 = precio > sma50
+    sobre_sma200 = precio > sma200
+    sobre_sma50  = precio > sma50
     sma50_sobre_sma200 = sma50 > sma200
 
-    if precio_sobre_sma50 and precio_sobre_sma200 and sma50_sobre_sma200:
-        return "ALCISTA"          # Precio > SMA50 > SMA200: tendencia alcista fuerte
-
-    if not precio_sobre_sma50 and not precio_sobre_sma200:
-        return "BAJISTA"          # Precio < SMA50 y SMA200: tendencia bajista
-
-    if precio_sobre_sma200 and not precio_sobre_sma50:
-        return "CORRECCION"       # Precio entre SMA50 y SMA200: corrección en tendencia alcista
-
-    return "TRANSICION"           # Cualquier otro caso: mercado en transición
+    if sobre_sma50 and sobre_sma200 and sma50_sobre_sma200:
+        return "ALCISTA"       # precio > SMA50 > SMA200: tendencia alcista fuerte
+    if not sobre_sma50 and not sobre_sma200:
+        return "BAJISTA"       # precio < SMA50 y SMA200: tendencia bajista
+    if sobre_sma200 and not sobre_sma50:
+        return "CORRECCION"    # precio entre SMA50 y SMA200: corrección en tendencia alcista
+    return "TRANSICION"
 
 
-def _generar_descripcion_btc(precio, sma50, sma200, dist50, dist200, tendencia, nivel_alerta) -> str:
+def _evaluar_signal_combinada(contexto_macro: str, tendencia_daily: str) -> str:
     """
-    Genera un texto descriptivo en lenguaje natural con el estado actual de BTC.
+    Genera la señal combinada cruzando el contexto macro (weekly) con la tendencia daily.
+
+    Lógica:
+    - ACUMULAR:             zona de acumulación weekly + momentum daily recuperándose
+    - ESPERAR_CONFIRMACION: zona de acumulación weekly pero momentum daily aún negativo
+                            (evitar "atrapar el cuchillo")
+    - FUERA_DE_ZONA:        precio lejos de la SMA200 weekly, no es zona óptima
     """
-    lineas = []
+    if contexto_macro == "BAJO_SMA200_WEEKLY":
+        # Zona extrema histórica: acumular en tranches sin importar el daily
+        return "ACUMULAR"
 
-    lineas.append(f"Precio actual: ${precio:,.2f}")
+    if contexto_macro == "ZONA_ACUMULACION":
+        if tendencia_daily in ["ALCISTA", "CORRECCION"]:
+            # El momentum diario empieza a recuperarse: señal fuerte
+            return "ACUMULAR"
+        else:
+            # Zona de acumulación macro pero el precio sigue cayendo en daily
+            return "ESPERAR_CONFIRMACION"
 
-    if sma50:
-        direccion50 = "sobre" if dist50 > 0 else "bajo"
-        lineas.append(f"SMA50: ${sma50:,.2f} ({abs(dist50):.1f}% {direccion50} la SMA)")
-
-    if sma200:
-        direccion200 = "sobre" if dist200 > 0 else "bajo"
-        lineas.append(f"SMA200: ${sma200:,.2f} ({abs(dist200):.1f}% {direccion200} la SMA)")
-
-    # Mensaje según la tendencia detectada
-    mensajes_tendencia = {
-        "ALCISTA": "Tendencia alcista: precio por encima de ambas medias móviles.",
-        "BAJISTA": "Tendencia bajista: precio por debajo de ambas medias móviles.",
-        "CORRECCION": "En corrección: precio entre SMA50 y SMA200.",
-        "TRANSICION": "Mercado en transición, señales mixtas.",
-    }
-    if tendencia in mensajes_tendencia:
-        lineas.append(mensajes_tendencia[tendencia])
-
-    # Mensaje de alerta si corresponde
-    if nivel_alerta == "CRITICO":
-        lineas.append(f"⚠️  ALERTA CRITICA: BTC a menos del {ALERTA_ZONA_CRITICA_PCT}% de la SMA200.")
-    elif nivel_alerta == "ATENCION":
-        lineas.append(f"⚡ ATENCION: BTC acercandose a la SMA200 (zona de interes historico).")
-    elif nivel_alerta == "DEBAJO_SMA200":
-        lineas.append("🔴 BTC por debajo de la SMA200. Zona de alta volatilidad.")
-
-    return " | ".join(lineas)
+    return "FUERA_DE_ZONA"
