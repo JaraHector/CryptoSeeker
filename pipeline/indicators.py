@@ -48,6 +48,34 @@ def get_sma_distance(current_price: float, sma_value: float) -> float:
     return ((current_price - sma_value) / sma_value) * 100
 
 
+def add_rsi(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """
+    Agrega RSI (Relative Strength Index) al DataFrame.
+    Usa el suavizado exponencial de Wilder (EWM), que es el estándar del indicador.
+
+    Valores de referencia:
+      < 30  → Oversold (sobrevendido): la coin fue muy castigada, posible zona de entrada.
+      30–50 → Recuperación desde oversold.
+      50–70 → Momentum neutral a positivo.
+      > 70  → Overbought (sobrecomprado): no acumular.
+
+    Args:
+        df:     DataFrame con columna 'close'.
+        period: Período del RSI. Default 14 (estándar de la industria).
+
+    Returns:
+        El mismo DataFrame con columna nueva: 'RSI_14' (o 'RSI_{period}').
+    """
+    delta    = df["close"].diff()
+    gain     = delta.clip(lower=0)
+    loss     = -delta.clip(upper=0)
+    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs = avg_gain / avg_loss
+    df[f"RSI_{period}"] = (100 - (100 / (1 + rs))).round(2)
+    return df
+
+
 def get_latest_indicators(df: pd.DataFrame) -> dict:
     """
     Extrae los valores más recientes del DataFrame ya calculado.
@@ -66,11 +94,13 @@ def get_latest_indicators(df: pd.DataFrame) -> dict:
     sma50 = latest.get("SMA_50")
     sma200 = latest.get("SMA_200")
 
+    rsi14 = latest.get("RSI_14")
+
     return {
         "precio_actual": round(price, 2),
         "sma_50": round(sma50, 2) if pd.notna(sma50) else None,
         "sma_200": round(sma200, 2) if pd.notna(sma200) else None,
-        # Distancia porcentual entre el precio y cada SMA
         "distancia_sma50_pct": round(get_sma_distance(price, sma50), 2) if pd.notna(sma50) else None,
         "distancia_sma200_pct": round(get_sma_distance(price, sma200), 2) if pd.notna(sma200) else None,
+        "rsi_14": round(rsi14, 2) if rsi14 is not None and pd.notna(rsi14) else None,
     }

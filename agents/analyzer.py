@@ -11,6 +11,11 @@ ALERTA_CRITICO_DAILY_PCT   = 10.0   # menos del 10% sobre SMA200 daily → crít
 # Umbral SMA200 weekly: dentro del 20% sobre la SMA200 weekly = zona de acumulación macro
 ZONA_ACUMULACION_WEEKLY_PCT = 20.0
 
+# Umbrales para altcoins (sin contexto weekly)
+ALTCOIN_ZONA_ACUMULACION_PCT = 20.0  # dentro del 20% sobre SMA200 daily = zona de interés
+ALTCOIN_RSI_OVERSOLD         = 35.0  # RSI < 35 = sobrevendido, señal de acumulación fuerte
+ALTCOIN_RSI_NEUTRO           = 50.0  # RSI < 50 = momentum aún débil
+
 
 def analizar_btc(indicadores: dict) -> dict:
     """
@@ -81,6 +86,48 @@ def analizar_dominance(dominance_data: dict) -> dict:
     }
 
 
+def analizar_altcoin(indicadores: dict, config: dict) -> dict:
+    """
+    Analiza una altcoin usando SMA200 daily, SMA50 daily, RSI(14) y ratio vs BTC.
+    La señal es independiente de BTC — cada coin habla por sí misma.
+    La decisión de mostrarla depende del contexto macro de BTC (ver notifier.py).
+
+    Args:
+        indicadores: Diccionario con precio, SMAs, RSI y opcionalmente ratio_btc.
+        config:      Entrada de ALTCOINS en config/altcoins.py.
+
+    Returns:
+        Diccionario con análisis completo de la altcoin.
+    """
+    precio       = indicadores["precio_actual"]
+    sma50        = indicadores.get("sma_50")
+    sma200       = indicadores.get("sma_200")
+    dist_sma200  = indicadores.get("distancia_sma200_pct")
+    dist_sma50   = indicadores.get("distancia_sma50_pct")
+    rsi          = indicadores.get("rsi_14")
+    ratio_btc    = indicadores.get("ratio_btc")
+    cambio_ratio = indicadores.get("cambio_ratio_30d_pct")
+
+    signal       = _evaluar_signal_altcoin(precio, sma50, sma200, dist_sma200, rsi)
+    zona_rsi     = _evaluar_zona_rsi(rsi)
+
+    return {
+        "nombre":              config["nombre"],
+        "symbol":              config["symbol"],
+        "silenciado":          config.get("silenciado", False),
+        "precio_actual":       precio,
+        "sma_50_daily":        sma50,
+        "sma_200_daily":       sma200,
+        "dist_sma50_daily_pct":  dist_sma50,
+        "dist_sma200_daily_pct": dist_sma200,
+        "rsi_14":              rsi,
+        "zona_rsi":            zona_rsi,
+        "ratio_btc":           ratio_btc,
+        "cambio_ratio_30d_pct": cambio_ratio,
+        "signal":              signal,
+    }
+
+
 # ── Funciones internas ────────────────────────────────────────────────────────
 
 def _evaluar_contexto_macro(dist_sma200_weekly: float) -> str:
@@ -132,6 +179,54 @@ def _evaluar_tendencia_daily(precio: float, sma50: float, sma200: float) -> str:
     if sobre_sma200 and not sobre_sma50:
         return "CORRECCION"    # precio entre SMA50 y SMA200: corrección en tendencia alcista
     return "TRANSICION"
+
+
+def _evaluar_signal_altcoin(
+    precio: float, sma50: float, sma200: float, dist_sma200: float, rsi: float
+) -> str:
+    """
+    Señal de acumulación para altcoins. Sin contexto weekly — solo daily + RSI.
+
+    Lógica:
+    - ACUMULAR:             precio dentro del 20% de la SMA200 daily Y recuperando momentum
+    - ESPERAR_CONFIRMACION: en zona de acumulación pero precio aún cayendo (RSI débil)
+    - FUERA_DE_ZONA:        precio muy por encima de la SMA200 daily, no zona óptima
+    """
+    if dist_sma200 is None:
+        return "SIN_DATOS"
+
+    en_zona = dist_sma200 <= ALTCOIN_ZONA_ACUMULACION_PCT
+
+    if not en_zona:
+        return "FUERA_DE_ZONA"
+
+    # En zona de acumulación: el RSI y la relación precio/SMA50 definen si acumular ya
+    rsi_recuperando  = rsi is not None and rsi < ALTCOIN_RSI_NEUTRO
+    precio_sobre_sma50 = (precio > sma50) if sma50 else False
+
+    if rsi is not None and rsi < ALTCOIN_RSI_OVERSOLD:
+        # Extremadamente sobrevendido: acumular independiente del SMA50
+        return "ACUMULAR"
+
+    if precio_sobre_sma50 or rsi_recuperando:
+        return "ACUMULAR"
+
+    return "ESPERAR_CONFIRMACION"
+
+
+def _evaluar_zona_rsi(rsi: float) -> str:
+    """Clasifica el valor RSI en una zona interpretable."""
+    if rsi is None:
+        return "SIN_DATOS"
+    if rsi < 30:
+        return "OVERSOLD_EXTREMO"
+    if rsi < ALTCOIN_RSI_OVERSOLD:
+        return "OVERSOLD"
+    if rsi < ALTCOIN_RSI_NEUTRO:
+        return "RECUPERACION"
+    if rsi < 70:
+        return "NEUTRAL"
+    return "OVERBOUGHT"
 
 
 def _evaluar_signal_combinada(contexto_macro: str, tendencia_daily: str) -> str:

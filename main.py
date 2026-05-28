@@ -6,16 +6,19 @@ Flujo:
   1. Traer candles diarias de BTC (SMA50 daily + SMA200 daily)
   2. Traer candles semanales de BTC (SMA200 weekly)
   3. Traer dominance de BTC desde CoinGecko
-  4. Analizar los datos con el agente
-  5. Imprimir el reporte en consola
+  4. Traer candles diarias de cada altcoin activa (SMA50, SMA200, RSI) + ratio vs BTC
+  5. Analizar los datos con el agente
+  6. Imprimir el reporte en consola
+  7. Enviar alerta Telegram si la señal BTC cambió
 """
 
 from data.exchange_client import get_ohlcv
-from pipeline.indicators import add_sma, get_latest_indicators
+from pipeline.indicators import add_sma, add_rsi, get_latest_indicators
 from pipeline.dominance import get_btc_dominance
-from agents.analyzer import analizar_btc, analizar_dominance
+from agents.analyzer import analizar_btc, analizar_dominance, analizar_altcoin
 from outputs.notifier import imprimir_reporte, formatear_para_telegram
 from outputs.telegram import send_alert_if_changed
+from config.altcoins import ALTCOINS
 
 
 def run():
@@ -48,16 +51,53 @@ def run():
     print("Trayendo datos de dominance desde CoinGecko...")
     dominance_data = get_btc_dominance()
 
-    # --- Paso 4: Analizar ---
+    # --- Paso 4: Altcoins ---
+    analisis_altcoins = []
+    for coin in ALTCOINS:
+        if not coin.get("activo", True):
+            continue
+
+        print(f"Trayendo datos de {coin['nombre']} ({coin['symbol']})...")
+        try:
+            df_alt = get_ohlcv(symbol=coin["symbol"], timeframe="1d", limit=250, exchange=coin["exchange"])
+            df_alt = add_sma(df_alt, periods=[50, 200])
+            df_alt = add_rsi(df_alt, period=14)
+            ind_alt = get_latest_indicators(df_alt)
+
+            # Ratio vs BTC: cuánto BTC vale 1 unidad de la altcoin + cambio 30 días
+            if coin.get("btc_symbol"):
+                try:
+                    df_btc_ratio = get_ohlcv(
+                        symbol=coin["btc_symbol"], timeframe="1d", limit=31, exchange=coin["exchange"]
+                    )
+                    ratio_actual = round(df_btc_ratio.iloc[-1]["close"], 8)
+                    ratio_30d_ago = df_btc_ratio.iloc[0]["close"] if len(df_btc_ratio) >= 31 else None
+                    cambio_ratio = (
+                        round((ratio_actual - ratio_30d_ago) / ratio_30d_ago * 100, 2)
+                        if ratio_30d_ago
+                        else None
+                    )
+                    ind_alt["ratio_btc"]           = ratio_actual
+                    ind_alt["cambio_ratio_30d_pct"] = cambio_ratio
+                except Exception as e:
+                    print(f"  Ratio BTC no disponible para {coin['nombre']}: {e}")
+
+            analisis = analizar_altcoin(ind_alt, coin)
+            analisis_altcoins.append(analisis)
+
+        except Exception as e:
+            print(f"  Error procesando {coin['nombre']}: {e}")
+
+    # --- Paso 5: Analizar BTC ---
     print("Analizando indicadores...")
     analisis_btc = analizar_btc(indicadores_btc)
     analisis_dom = analizar_dominance(dominance_data)
 
-    # --- Paso 5: Reporte en consola ---
-    imprimir_reporte(analisis_btc, analisis_dom)
+    # --- Paso 6: Reporte en consola ---
+    imprimir_reporte(analisis_btc, analisis_dom, analisis_altcoins)
 
-    # --- Paso 6: Alerta Telegram (solo si la señal cambió) ---
-    mensaje_telegram = formatear_para_telegram(analisis_btc, analisis_dom)
+    # --- Paso 7: Alerta Telegram (solo si la señal cambió) ---
+    mensaje_telegram = formatear_para_telegram(analisis_btc, analisis_dom, analisis_altcoins)
     send_alert_if_changed(mensaje_telegram, analisis_btc["signal_combinada"])
 
 
