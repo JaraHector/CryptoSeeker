@@ -51,6 +51,10 @@ def run():
     print("Trayendo datos de dominance desde CoinGecko...")
     dominance_data = get_btc_dominance()
 
+    # Precios de BTC para ratio sintético de coins sin par directo BTC
+    btc_price_now    = df_daily.iloc[-1]["close"]
+    btc_price_30d_ago = df_daily.iloc[-31]["close"] if len(df_daily) >= 31 else None
+
     # --- Paso 4: Altcoins ---
     analisis_altcoins = []
     for coin in ALTCOINS:
@@ -81,6 +85,18 @@ def run():
                     ind_alt["cambio_ratio_30d_pct"] = cambio_ratio
                 except Exception as e:
                     print(f"  Ratio BTC no disponible para {coin['nombre']}: {e}")
+            else:
+                # Ratio sintético: precio_altcoin_USD ÷ precio_BTC_USD
+                alt_price_now    = df_alt.iloc[-1]["close"]
+                alt_price_30d_ago = df_alt.iloc[-31]["close"] if len(df_alt) >= 31 else None
+                ratio_actual = round(alt_price_now / btc_price_now, 8)
+                cambio_ratio = (
+                    round((ratio_actual - alt_price_30d_ago / btc_price_30d_ago) / (alt_price_30d_ago / btc_price_30d_ago) * 100, 2)
+                    if alt_price_30d_ago and btc_price_30d_ago
+                    else None
+                )
+                ind_alt["ratio_btc"]            = ratio_actual
+                ind_alt["cambio_ratio_30d_pct"]  = cambio_ratio
 
             analisis = analizar_altcoin(ind_alt, coin)
             analisis_altcoins.append(analisis)
