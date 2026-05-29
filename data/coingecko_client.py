@@ -58,6 +58,42 @@ def get_coins_market_data(coin_ids: list) -> list:
     return response.json()
 
 
+def get_btc_market_cap_chart(days: int = 31) -> list:
+    """
+    Trae el historial de market cap de BTC para los últimos N días.
+    Se usa para calcular el dominance de BTC hace 30 días y comparar con el actual.
+
+    Args:
+        days: Cantidad de días de historial (default 31 para tener día 0 y día 30).
+
+    Returns:
+        Lista de pares [timestamp_ms, market_cap_usd] ordenados de más viejo a más nuevo.
+    """
+    url = f"{COINGECKO_BASE_URL}/coins/bitcoin/market_chart"
+    params = {"vs_currency": "usd", "days": days, "interval": "daily"}
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json()["market_caps"]  # [[timestamp, value], ...]
+
+
+def get_global_market_cap_chart(days: int = 31) -> list:
+    """
+    Trae el historial de market cap total del mercado crypto para los últimos N días.
+    Se combina con get_btc_market_cap_chart() para calcular el dominance histórico de BTC.
+
+    Args:
+        days: Cantidad de días de historial.
+
+    Returns:
+        Lista de pares [timestamp_ms, market_cap_usd] ordenados de más viejo a más nuevo.
+    """
+    url = f"{COINGECKO_BASE_URL}/global/market_cap_chart"
+    params = {"days": days, "vs_currency": "usd"}
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json()["market_cap_chart"]["usd"]  # [[timestamp, value], ...]
+
+
 def get_stablecoin_total_market_cap() -> float:
     """
     Calcula el market cap total sumando las principales stablecoins.

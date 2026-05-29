@@ -10,10 +10,11 @@ def imprimir_reporte(
     analisis_btc: dict,
     analisis_dominance: dict,
     analisis_altcoins: list = None,
+    analisis_ciclo: dict = None,
 ) -> None:
     """
     Imprime en consola el reporte completo con contexto estratégico.
-    Las altcoins solo se muestran cuando BTC está en zona de acumulación.
+    Orden: BTC técnico → Ciclo Macro → Dominance → Altcoins.
     """
     timestamp  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sep_grueso = "=" * 62
@@ -43,7 +44,8 @@ def imprimir_reporte(
 
     etiquetas_macro = {
         "BAJO_SMA200_WEEKLY": "🔴 BAJO SMA200 WEEKLY — Zona extrema histórica. Acumular en tranches.",
-        "ZONA_ACUMULACION":   "🟡 ZONA DE ACUMULACION — Precio cerca del soporte macro. Zona de interés.",
+        "ZONA_ACUMULACION":   "🟠 ZONA DE ACUMULACION — Dentro del 15%. Zona real de compra.",
+        "ZONA_VIGILANCIA":    "🟡 ZONA DE VIGILANCIA — Entre 15-20%. Empezar a prestar atención.",
         "MERCADO_ALTO":       "🟢 MERCADO ALTO — Precio lejos de la zona de acumulación óptima.",
     }
     print(f"  Estado:    {etiquetas_macro.get(contexto, contexto)}")
@@ -102,9 +104,10 @@ def imprimir_reporte(
     # Tabla de señales: la fila activa se marca con ►
     filas = [
         ("BAJO_SMA200_WEEKLY", "ACUMULAR",             "Bajo SMA200 weekly   ", "Cualquiera           ", "ACUMULAR          "),
-        ("ZONA_ACUMULACION",   "ACUMULAR",             "Zona acumulación     ", "Recuperándose        ", "ACUMULAR          "),
-        ("ZONA_ACUMULACION",   "ESPERAR_CONFIRMACION", "Zona acumulación     ", "Todavía bajando      ", "ESPERAR CONFIRM.  "),
-        ("MERCADO_ALTO",       "FUERA_DE_ZONA",        "Lejos de zona        ", "Cualquiera           ", "FUERA DE ZONA     "),
+        ("ZONA_ACUMULACION",   "ACUMULAR",             "Zona acumul. (≤15%)  ", "Recuperándose        ", "ACUMULAR          "),
+        ("ZONA_ACUMULACION",   "ESPERAR_CONFIRMACION", "Zona acumul. (≤15%)  ", "Todavía bajando      ", "ESPERAR CONFIRM.  "),
+        ("ZONA_VIGILANCIA",    "ESPERAR_CONFIRMACION", "Zona vigil. (15-20%) ", "Cualquiera           ", "ESPERAR CONFIRM.  "),
+        ("MERCADO_ALTO",       "FUERA_DE_ZONA",        "Lejos de zona (>20%) ", "Cualquiera           ", "FUERA DE ZONA     "),
     ]
 
     print(f"  {'SMA200 Weekly':<22} {'SMA200 Daily':<22} {'Señal':<18}")
@@ -147,6 +150,10 @@ def imprimir_reporte(
     print(f"  • Señal óptima: precio cerca de SMA200 weekly + recuperando SMA200 daily.")
     print(f"  • Cuidado con el 'cuchillo cayendo': si estás en zona de acumulación")
     print(f"    weekly pero aún por debajo de la SMA200 daily, esperar confirmación.")
+
+    # ── CICLO MACRO ───────────────────────────────────────────────
+    if analisis_ciclo:
+        _imprimir_ciclo_macro(analisis_ciclo, sep_fino)
 
     # ── DOMINANCE ─────────────────────────────────────────────────
     print(f"\n{sep_fino}")
@@ -285,10 +292,93 @@ def _imprimir_altcoin(alt: dict, sep_fino: str) -> None:
     print(f"  Señal:        {etiquetas_signal.get(signal, signal)}")
 
 
+def _imprimir_ciclo_macro(ciclo: dict, sep_fino: str) -> None:
+    """
+    Imprime la sección de indicadores de ciclo macro en consola.
+    Incluye Fear & Greed, dominance trend, SMA200w slope, ATH distance y Pi Cycle.
+    """
+    print(f"\n{sep_fino}")
+    print("  🔄 CICLO MACRO")
+    print(sep_fino)
+
+    # Fear & Greed
+    fg_val   = ciclo.get("fg_valor")
+    fg_clas  = ciclo.get("fg_clasificacion", "—")
+    fg_trend = ciclo.get("fg_trend_7d", "SIN_DATOS")
+    fg_prev  = ciclo.get("fg_valor_7d_ago")
+
+    if fg_val is not None:
+        fg_emojis = {
+            "MIEDO EXTREMO": "🔴", "MIEDO": "🟠",
+            "NEUTRAL": "⚪", "CODICIA": "🟡", "CODICIA EXTREMA": "🟢",
+        }
+        trend_simbolo = {"SUBIENDO": "↑", "BAJANDO": "↓", "ESTABLE": "→"}.get(fg_trend, "")
+        prev_str = f" (era {fg_prev} hace 7d)" if fg_prev is not None else ""
+        emoji_fg = fg_emojis.get(fg_clas, "⚪")
+        print(f"  Fear & Greed:     {fg_val} — {emoji_fg} {fg_clas}  {trend_simbolo}{prev_str}")
+    else:
+        print("  Fear & Greed:     — Sin datos")
+
+    # Dominance trend
+    dom_trend   = ciclo.get("dom_trend", "SIN_DATOS")
+    dom_cambio  = ciclo.get("dom_cambio_30d")
+    dom_hoy     = ciclo.get("dom_hoy_pct")
+
+    if dom_hoy is not None:
+        simbolo_dom = "↑" if dom_trend == "SUBIENDO" else "↓" if dom_trend == "BAJANDO" else "→"
+        cambio_str  = f"{simbolo_dom}{abs(dom_cambio):.1f}% en 30d" if dom_cambio is not None else ""
+        interp_dom  = {
+            "SUBIENDO": "capital refugiándose en BTC (early bull o bear)",
+            "BAJANDO":  "capital fluyendo a alts — posible altcoin season (late bull)",
+            "ESTABLE":  "dominance estable",
+        }.get(dom_trend, "")
+        print(f"  Dominance trend:  {dom_hoy}%  {cambio_str} — {interp_dom}")
+    else:
+        print("  Dominance trend:  — Sin datos")
+
+    # SMA200w slope
+    slope      = ciclo.get("sma200w_slope", "SIN_DATOS")
+    slope_interp = {
+        "SUBIENDO": "🟢 SUBIENDO — tendencia macro alcista sostenida",
+        "BAJANDO":  "🔴 BAJANDO — tendencia macro deteriorándose",
+        "SIN_DATOS": "— Sin datos",
+    }
+    print(f"  SMA200w slope:    {slope_interp.get(slope, slope)}")
+
+    # ATH distance
+    ath_usd  = ciclo.get("ath_usd")
+    ath_dist = ciclo.get("ath_distancia_pct")
+    if ath_usd is not None and ath_dist is not None:
+        dir_ath = "bajo" if ath_dist < 0 else "sobre"
+        print(f"  ATH distance:     {abs(ath_dist):.1f}% {dir_ath} ATH (${ath_usd:,.0f})")
+    else:
+        print("  ATH distance:     — Sin datos")
+
+    # Pi Cycle Top
+    pi_estado = ciclo.get("pi_estado", "SIN_DATOS")
+    pi_gap    = ciclo.get("pi_gap_pct")
+    pi_alerta = ciclo.get("pi_alerta", False)
+    pi_111    = ciclo.get("pi_sma111")
+    pi_2x350  = ciclo.get("pi_2x350")
+
+    if pi_estado != "SIN_DATOS" and pi_111 is not None:
+        if pi_alerta:
+            # Cruce activo: señal histórica de top de ciclo
+            print(f"  Pi Cycle Top:     ⚠️  SEÑAL DE TOP ACTIVA")
+            print(f"                    SMA111: ${pi_111:,.0f} ≥ 2×SMA350: ${pi_2x350:,.0f}")
+        else:
+            # Bull en progreso: mostrar brecha (negativa = bull sano, alejado del cruce)
+            print(f"  Pi Cycle Top:     ✅ SIN SEÑAL DE TOP — bull en progreso")
+            print(f"                    SMA111: ${pi_111:,.0f}  |  2×SMA350: ${pi_2x350:,.0f}  |  gap: {pi_gap:+.1f}%")
+    else:
+        print("  Pi Cycle Top:     — Sin datos (necesita 350+ días de historial)")
+
+
 def formatear_para_telegram(
     analisis_btc: dict,
     analisis_dominance: dict,
     analisis_altcoins: list = None,
+    analisis_ciclo: dict = None,
 ) -> str:
     """
     Genera el texto formateado para enviar por Telegram.
@@ -327,6 +417,26 @@ def formatear_para_telegram(
         f"*Dominance ajustada:* {analisis_dominance['dominance_adjusted_pct']}%\n"
         f"_{analisis_dominance['interpretacion']}_"
     )
+
+    # Ciclo macro: resumen compacto para Telegram
+    if analisis_ciclo:
+        fg_val  = analisis_ciclo.get("fg_valor")
+        fg_clas = analisis_ciclo.get("fg_clasificacion", "")
+        slope   = analisis_ciclo.get("sma200w_slope", "")
+        ath_d   = analisis_ciclo.get("ath_distancia_pct")
+        pi_al   = analisis_ciclo.get("pi_alerta", False)
+
+        ciclo_lineas = ["\n\n*— Ciclo Macro —*"]
+        if fg_val is not None:
+            ciclo_lineas.append(f"Fear & Greed: {fg_val} ({fg_clas})")
+        if slope:
+            ciclo_lineas.append(f"SMA200w: {slope}")
+        if ath_d is not None:
+            ciclo_lineas.append(f"ATH: {abs(ath_d):.1f}% {'bajo' if ath_d < 0 else 'sobre'} ATH")
+        if pi_al:
+            ciclo_lineas.append("⚠️ Pi Cycle Top: SEÑAL DE TOP ACTIVA")
+
+        mensaje += "\n".join(ciclo_lineas)
 
     # Altcoins: incluir solo no silenciadas cuando BTC está en zona
     btc_en_zona = signal in ("ACUMULAR", "ESPERAR_CONFIRMACION")

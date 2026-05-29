@@ -8,8 +8,12 @@ En el futuro se integrará un LLM (Claude) para análisis más sofisticados.
 ALERTA_ATENCION_DAILY_PCT  = 15.0   # menos del 15% sobre SMA200 daily → atención
 ALERTA_CRITICO_DAILY_PCT   = 10.0   # menos del 10% sobre SMA200 daily → crítico
 
-# Umbral SMA200 weekly: dentro del 20% sobre la SMA200 weekly = zona de acumulación macro
-ZONA_ACUMULACION_WEEKLY_PCT = 20.0
+# Umbrales SMA200 weekly para definir la zona de acumulación macro
+# ZONA_VIGILANCIA: dentro del 20% — empezar a prestar atención, zona se acerca
+# ZONA_ACUMULACION: dentro del 15% — zona real de compra en tranches
+# Referencia: con SMA200w ≈ $61k, el 15% corresponde a ~$70k
+ZONA_VIGILANCIA_WEEKLY_PCT  = 20.0
+ZONA_ACUMULACION_WEEKLY_PCT = 15.0
 
 # Umbrales para altcoins (sin contexto weekly)
 ALTCOIN_ZONA_ACUMULACION_PCT = 20.0  # dentro del 20% sobre SMA200 daily = zona de interés
@@ -137,21 +141,74 @@ def analizar_altcoin(indicadores: dict, config: dict) -> dict:
     }
 
 
+def analizar_ciclo_macro(indicadores: dict) -> dict:
+    """
+    Analiza los indicadores de ciclo macro del mercado crypto.
+    Estos indicadores ayudan a identificar en qué fase del ciclo estamos
+    (bull market, bear market, transición) más allá del precio puntual.
+
+    Args:
+        indicadores: Dict con fear_greed, dominance_trend, sma200w_slope,
+                     ath_usd, ath_distancia_pct, pi_sma111, pi_2x350, precio_actual.
+
+    Returns:
+        Diccionario con análisis completo de ciclo macro.
+    """
+    fear_greed      = indicadores.get("fear_greed", {})
+    dominance_trend = indicadores.get("dominance_trend", {})
+    sma200w_slope   = indicadores.get("sma200w_slope", "SIN_DATOS")
+    ath_usd         = indicadores.get("ath_usd")
+    ath_dist        = indicadores.get("ath_distancia_pct")
+    pi_sma111       = indicadores.get("pi_sma111")
+    pi_2x350        = indicadores.get("pi_2x350")
+
+    # Pi Cycle: estado y brecha entre las dos líneas
+    pi_estado, pi_gap_pct, pi_alerta = _evaluar_pi_cycle(pi_sma111, pi_2x350)
+
+    return {
+        # Fear & Greed
+        "fg_valor":          fear_greed.get("valor"),
+        "fg_clasificacion":  fear_greed.get("clasificacion"),
+        "fg_trend_7d":       fear_greed.get("trend_7d"),
+        "fg_valor_7d_ago":   fear_greed.get("valor_7d_ago"),
+        # Dominance trend
+        "dom_trend":         dominance_trend.get("trend"),
+        "dom_cambio_30d":    dominance_trend.get("cambio_30d_pct"),
+        "dom_hoy_pct":       dominance_trend.get("dominance_hoy_pct"),
+        "dom_30d_ago_pct":   dominance_trend.get("dominance_30d_ago_pct"),
+        # SMA200w slope
+        "sma200w_slope":     sma200w_slope,
+        # ATH distance
+        "ath_usd":           ath_usd,
+        "ath_distancia_pct": ath_dist,
+        # Pi Cycle Top
+        "pi_sma111":         pi_sma111,
+        "pi_2x350":          pi_2x350,
+        "pi_estado":         pi_estado,
+        "pi_gap_pct":        pi_gap_pct,
+        "pi_alerta":         pi_alerta,
+    }
+
+
 # ── Funciones internas ────────────────────────────────────────────────────────
 
 def _evaluar_contexto_macro(dist_sma200_weekly: float) -> str:
     """
-    Evalúa el contexto macro usando la SMA200 weekly.
-    Esta es la referencia histórica de largo plazo para acumulación.
+    Evalúa el contexto macro usando la SMA200 weekly con dos niveles de alerta:
+
+    - BAJO_SMA200_WEEKLY: precio bajo la SMA200w — zona extrema, muy rara históricamente
+    - ZONA_ACUMULACION:   dentro del 15% sobre SMA200w — zona real de compra en tranches
+    - ZONA_VIGILANCIA:    entre 15% y 20% sobre SMA200w — empezar a prestar atención
+    - MERCADO_ALTO:       más del 20% sobre SMA200w — no es momento óptimo de acumulación
     """
     if dist_sma200_weekly is None:
         return "SIN_DATOS"
     if dist_sma200_weekly < 0:
-        # BTC por debajo de la SMA200 weekly: zona extrema, muy rara históricamente
         return "BAJO_SMA200_WEEKLY"
     if dist_sma200_weekly <= ZONA_ACUMULACION_WEEKLY_PCT:
-        # Dentro del 20% sobre la SMA200 weekly: zona de acumulación macro
         return "ZONA_ACUMULACION"
+    if dist_sma200_weekly <= ZONA_VIGILANCIA_WEEKLY_PCT:
+        return "ZONA_VIGILANCIA"
     return "MERCADO_ALTO"
 
 
@@ -238,6 +295,31 @@ def _evaluar_zona_rsi(rsi: float) -> str:
     return "OVERBOUGHT"
 
 
+def _evaluar_pi_cycle(sma111: float, pi_2x350: float) -> tuple:
+    """
+    Evalúa el estado del Pi Cycle Top Indicator.
+
+    Lógica:
+    - Mientras SMA_111 < 2×SMA_350 → bull market en progreso, no hay señal de top
+    - Cuando SMA_111 cruza POR ENCIMA de 2×SMA_350 → señal histórica de top de ciclo
+    - La brecha (gap) indica cuán lejos estamos de ese cruce
+
+    Returns:
+        Tuple (estado, gap_pct, alerta):
+          - estado:   "BULL_EN_PROGRESO" / "SEÑAL_TOP" / "SIN_DATOS"
+          - gap_pct:  distancia porcentual entre SMA_111 y 2×SMA_350 (negativo = bull sano)
+          - alerta:   True si SMA_111 ≥ 2×SMA_350 (señal de top activa)
+    """
+    if sma111 is None or pi_2x350 is None:
+        return ("SIN_DATOS", None, False)
+
+    gap_pct = round((sma111 - pi_2x350) / pi_2x350 * 100, 2)
+    alerta  = sma111 >= pi_2x350
+
+    estado  = "SEÑAL_TOP" if alerta else "BULL_EN_PROGRESO"
+    return (estado, gap_pct, alerta)
+
+
 def _interpretar_ps_ratio(ps_ratio: float) -> str:
     """
     Interpreta el P/S ratio de un protocolo DeFi tipo exchange.
@@ -270,10 +352,13 @@ def _evaluar_signal_combinada(contexto_macro: str, tendencia_daily: str) -> str:
 
     if contexto_macro == "ZONA_ACUMULACION":
         if tendencia_daily in ["ALCISTA", "CORRECCION"]:
-            # El momentum diario empieza a recuperarse: señal fuerte
             return "ACUMULAR"
         else:
-            # Zona de acumulación macro pero el precio sigue cayendo en daily
+            # En zona real pero el precio sigue cayendo: esperar confirmación diaria
             return "ESPERAR_CONFIRMACION"
+
+    if contexto_macro == "ZONA_VIGILANCIA":
+        # Zona de atención: cerca pero aún no es la zona óptima de compra
+        return "ESPERAR_CONFIRMACION"
 
     return "FUERA_DE_ZONA"
