@@ -18,19 +18,30 @@ Campos requeridos:
 
 ALTCOINS = [
     {
-        "nombre":     "TAO",
-        "symbol":     "TAO/USDT",
-        "exchange":   "binance",
-        "btc_symbol": "TAO/BTC",
-        "activo":     True,
-        "silenciado": False,
+        "nombre":          "TAO",
+        "symbol":          "TAO/USDT",
+        "exchange":        "binance",
+        "btc_symbol":      "TAO/BTC",
+        "activo":          True,
+        "silenciado":      False,
+        "defillama_slug":  None,  # BitTensor no es un protocolo DeFi con fees medibles
     },
     {
-        "nombre":     "VVV",
-        "symbol":     "VVV/USD",
-        "exchange":   "coinbase",
-        "btc_symbol": None,  # Coinbase no ofrece VVV/BTC
-        "activo":     True,
-        "silenciado": False,
+        "nombre":          "VVV",
+        "symbol":          "VVV/USD",
+        "exchange":        "coinbase",
+        "btc_symbol":      None,
+        "activo":          True,
+        "silenciado":      False,
+        "defillama_slug":  None,  # Venice AI token, sin fees de protocolo
+    },
+    {
+        "nombre":          "HYPE",
+        "symbol":          "HYPE/USDT",
+        "exchange":        "binance",
+        "btc_symbol":      None,
+        "activo":          True,
+        "silenciado":      False,
+        "defillama_slug":  "hyperliquid",
     },
 ]

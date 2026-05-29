@@ -254,6 +254,24 @@ def _imprimir_altcoin(alt: dict, sep_fino: str) -> None:
     else:
         print(f"  Ratio vs BTC: no disponible para este exchange")
 
+    # P/S ratio (solo si está disponible)
+    ps_ratio    = alt.get("ps_ratio")
+    ps_interp   = alt.get("ps_interpretacion")
+    rev_anual   = alt.get("revenue_anual_usd")
+    mcap_usd    = alt.get("mcap_usd")
+
+    if ps_ratio is not None:
+        etiquetas_ps = {
+            "BARATO":    "🟢 < 10x — por debajo de exchanges TradFi (Robinhood ~6x, CME ~18x)",
+            "RAZONABLE": "🟡 10–25x — rango fair value para exchange en crecimiento",
+            "CARO":      "🟠 25–50x — pricing in crecimiento significativo",
+            "MUY_CARO":  "🔴 > 50x — premium especulativo elevado",
+        }
+        rev_str  = f"${rev_anual/1e6:.0f}M" if rev_anual and rev_anual < 1e9 else (f"${rev_anual/1e9:.2f}B" if rev_anual else "—")
+        mcap_str = f"${mcap_usd/1e9:.2f}B" if mcap_usd and mcap_usd >= 1e9 else (f"${mcap_usd/1e6:.0f}M" if mcap_usd else "—")
+        print(f"  P/S ratio:    {ps_ratio}x  {etiquetas_ps.get(ps_interp, ps_interp)}")
+        print(f"                Revenue anual: {rev_str}  |  Market cap: {mcap_str}")
+
     # Señal
     etiquetas_signal = {
         "ACUMULAR":             "✅ ACUMULAR — zona SMA200 + momentum recuperándose.",
@@ -353,5 +371,12 @@ def _formatear_altcoin_telegram(alt: dict) -> str:
         dir_ratio = "▲" if cambio >= 0 else "▼"
         alpha_tag = "alpha ✅" if cambio >= 0 else "pierde vs BTC ⚠️"
         lineas.append(f"vs BTC 30d: {dir_ratio}{abs(cambio):.1f}% ({alpha_tag})")
+
+    ps_ratio  = alt.get("ps_ratio")
+    ps_interp = alt.get("ps_interpretacion")
+    if ps_ratio is not None:
+        ps_emojis = {"BARATO": "🟢", "RAZONABLE": "🟡", "CARO": "🟠", "MUY_CARO": "🔴"}
+        emoji_ps = ps_emojis.get(ps_interp, "⚪")
+        lineas.append(f"P/S: {ps_ratio}x {emoji_ps} ({ps_interp.lower().replace('_', ' ')})")
 
     return "\n".join(lineas)

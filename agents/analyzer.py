@@ -111,6 +111,11 @@ def analizar_altcoin(indicadores: dict, config: dict) -> dict:
     signal       = _evaluar_signal_altcoin(precio, sma50, sma200, dist_sma200, rsi)
     zona_rsi     = _evaluar_zona_rsi(rsi)
 
+    ps_ratio          = indicadores.get("ps_ratio")
+    revenue_anual_usd = indicadores.get("revenue_anual_usd")
+    mcap_usd          = indicadores.get("mcap_usd")
+    ps_interpretacion = _interpretar_ps_ratio(ps_ratio)
+
     return {
         "nombre":              config["nombre"],
         "symbol":              config["symbol"],
@@ -124,6 +129,10 @@ def analizar_altcoin(indicadores: dict, config: dict) -> dict:
         "zona_rsi":            zona_rsi,
         "ratio_btc":           ratio_btc,
         "cambio_ratio_30d_pct": cambio_ratio,
+        "ps_ratio":            ps_ratio,
+        "revenue_anual_usd":   revenue_anual_usd,
+        "mcap_usd":            mcap_usd,
+        "ps_interpretacion":   ps_interpretacion,
         "signal":              signal,
     }
 
@@ -227,6 +236,22 @@ def _evaluar_zona_rsi(rsi: float) -> str:
     if rsi < 70:
         return "NEUTRAL"
     return "OVERBOUGHT"
+
+
+def _interpretar_ps_ratio(ps_ratio: float) -> str:
+    """
+    Interpreta el P/S ratio de un protocolo DeFi tipo exchange.
+    Referencia TradFi: Robinhood ~4-8x, CME ~15-20x.
+    """
+    if ps_ratio is None:
+        return "SIN_DATOS"
+    if ps_ratio < 10:
+        return "BARATO"       # por debajo de exchanges TradFi establecidos
+    if ps_ratio < 25:
+        return "RAZONABLE"    # rango fair value para exchange en crecimiento
+    if ps_ratio < 50:
+        return "CARO"         # pricing in crecimiento significativo
+    return "MUY_CARO"         # premium especulativo elevado
 
 
 def _evaluar_signal_combinada(contexto_macro: str, tendencia_daily: str) -> str:

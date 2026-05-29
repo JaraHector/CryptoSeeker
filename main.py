@@ -13,6 +13,7 @@ Flujo:
 """
 
 from data.exchange_client import get_ohlcv
+from data.defillama_client import get_ps_ratio
 from pipeline.indicators import add_sma, add_rsi, get_latest_indicators
 from pipeline.dominance import get_btc_dominance
 from agents.analyzer import analizar_btc, analizar_dominance, analizar_altcoin
@@ -97,6 +98,14 @@ def run():
                 )
                 ind_alt["ratio_btc"]            = ratio_actual
                 ind_alt["cambio_ratio_30d_pct"]  = cambio_ratio
+
+            # P/S ratio desde DeFiLlama (solo para protocolos con fees medibles)
+            if coin.get("defillama_slug"):
+                try:
+                    ps_data = get_ps_ratio(coin["defillama_slug"])
+                    ind_alt.update(ps_data)
+                except Exception as e:
+                    print(f"  P/S ratio no disponible para {coin['nombre']}: {e}")
 
             analisis = analizar_altcoin(ind_alt, coin)
             analisis_altcoins.append(analisis)
