@@ -177,6 +177,9 @@ def imprimir_reporte(
         print("    RSI > 70 = sobrecomprado → no acumular, esperar corrección.")
         print("  • Ratio vs BTC (30d): si la altcoin pierde vs BTC, mejor quedarse")
         print("    en BTC. Solo acumular altcoins que muestren alpha positivo vs BTC.")
+        print("  • P/S ratio (protocolos DeFi con fees): market cap ÷ revenue anual.")
+        print("    Referencia TradFi: Robinhood ~6x, CME ~18x.")
+        print("    < 10x = barato  |  10–25x = razonable  |  > 25x = caro.")
 
         for alt in altcoins_activas:
             _imprimir_altcoin(alt, sep_fino)
