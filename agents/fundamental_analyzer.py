@@ -1,6 +1,6 @@
 """
 Análisis fundamental via Claude API (claude-haiku-4-5-20251001).
-Toma noticias de CryptoPanic e interpreta si la thesis de inversión sigue vigente.
+Toma noticias de CoinDesk y CoinTelegraph (RSS) e interpreta si la thesis sigue vigente.
 Corre UNA VEZ AL DÍA — resultado cacheado en logs/fundamental_cache.json.
 """
 
