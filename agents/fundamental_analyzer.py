@@ -56,7 +56,7 @@ def _analizar_coin(client: Anthropic, coin: str) -> dict:
     noticias = get_news(currencies=[coin], limit=_NEWS_LIMIT)
 
     if not noticias:
-        return _resultado_vacio(coin, "Sin noticias disponibles en CryptoPanic.")
+        return _resultado_vacio(coin, "Sin noticias disponibles en CoinDesk ni CoinTelegraph.")
 
     noticias_texto = "\n".join([
         f"- [{n['source']}] {n['title']} ({n['published_at']})"
