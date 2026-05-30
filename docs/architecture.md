@@ -3,31 +3,33 @@
 ## Visión general
 
 CryptoSeeker es un sistema de análisis y alertas de criptomonedas organizado en 4 capas.
-El objetivo final es tener señales técnicas + contexto fundamental para tomar decisiones
-de acumulación, con visión futura de trading automatizado.
+El objetivo es cubrir el ciclo completo de inversión: acumulación, hold, take profit y rotación,
+usando señales técnicas + indicadores de ciclo macro + contexto fundamental.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Capa 1 — DATA SOURCES                                      │
-│  Binance (ccxt) · CoinGecko · TradingView webhook (futuro)  │
-└──────────────────────────┬──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Capa 1 — DATA SOURCES                                              │
+│  Binance (ccxt) · CoinGecko · Alternative.me · DeFiLlama           │
+│  CryptoPanic (roadmap) · TradingView webhook (roadmap)              │
+└──────────────────────────┬──────────────────────────────────────────┘
                            │
-┌──────────────────────────▼──────────────────────────────────┐
-│  Capa 2 — DATA PIPELINE                                     │
-│  SMA50 daily · SMA200 daily · SMA200 weekly                 │
-│  BTC Dominance (ex-stablecoins) · Fibonacci (roadmap)       │
-└──────────────────────────┬──────────────────────────────────┘
+┌──────────────────────────▼──────────────────────────────────────────┐
+│  Capa 2 — DATA PIPELINE                                             │
+│  SMAs (50/200 daily · 200 weekly) · RSI(14) · Pi Cycle (111/350d)  │
+│  Dominance ajustada · Dominance trend 30d · SMA200w slope           │
+│  ATH distance · Fear & Greed · P/S ratio (DeFiLlama)               │
+└──────────────────────────┬──────────────────────────────────────────┘
                            │
-┌──────────────────────────▼──────────────────────────────────┐
-│  Capa 3 — AI AGENTS                                         │
-│  Señal combinada (rule-based) · Análisis fundamental (LLM)  │
-│  Comparación de pares · Contexto de altcoins                │
-└──────────────────────────┬──────────────────────────────────┘
+┌──────────────────────────▼──────────────────────────────────────────┐
+│  Capa 3 — AGENTS                                                    │
+│  analizar_btc() · analizar_ciclo_macro() · analizar_altcoin()       │
+│  Análisis fundamental LLM (roadmap)                                 │
+└──────────────────────────┬──────────────────────────────────────────┘
                            │
-┌──────────────────────────▼──────────────────────────────────┐
-│  Capa 4 — OUTPUT                                            │
-│  Consola · Telegram · HTML (roadmap)                        │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────▼──────────────────────────────────────────┐
+│  Capa 4 — OUTPUT                                                    │
+│  Consola · Telegram · HTML + email (roadmap)                        │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -35,115 +37,174 @@ de acumulación, con visión futura de trading automatizado.
 ## Capa 1 — Data Sources
 
 ### Binance (via ccxt)
-- Librería: `ccxt==4.4.61`
-- Datos: candles OHLCV de cualquier par (BTC/USDT, ETH/USDT, etc.)
-- Timeframes usados: `1d` (diario) y `1w` (semanal)
+- Librería: `ccxt`
+- Datos: candles OHLCV de cualquier par
+- Timeframes: `1d` (diario, limit=400) y `1w` (semanal, limit=210)
+- Exchanges soportados: Binance, Coinbase, Kraken (exchange-agnostic via parámetro)
 - No requiere API key para datos públicos de mercado
-- Las API keys de Binance están reservadas para trading futuro
 
 ### CoinGecko
 - API pública gratuita, sin API key en el tier básico
-- Datos: market cap global, Bitcoin Dominance
-- Dominance **ajustada**: excluye stablecoins (USDT, USDC, DAI, etc.) del total del mercado
-  para mostrar la dominancia real de BTC sobre las altcoins activas
+- Datos actuales: market cap global, Bitcoin Dominance standard y ajustada
+- Datos históricos: market cap chart de BTC y global (para dominance trend 30d)
 
-### TradingView (roadmap)
-- Alternativa a polling: recibir datos vía webhook en tiempo real
-- Evita el delay del cron job para señales de corto plazo
+### Alternative.me
+- Fear & Greed Index — índice de sentimiento del mercado (0-100)
+- API pública gratuita, devuelve hasta 30 días de historial
+- Usado para detectar extremos de sentimiento (miedo extremo = bottom, codicia extrema = top)
+
+### DeFiLlama
+- API pública gratuita, sin API key
+- Datos: fees/revenue de protocolos DeFi y market cap
+- Usado para calcular P/S ratio de protocolos con revenue on-chain (ej: Hyperliquid)
+
+### CryptoPanic (roadmap)
+- Agregador de noticias crypto, free tier sin API key
+- Fuente de noticias para el análisis fundamental diario con Claude API
 
 ---
 
 ## Capa 2 — Data Pipeline
 
-### Indicadores implementados
+### Indicadores de BTC
 
 #### SMA50 Daily
 - Promedio de los últimos 50 cierres diarios (~2 meses)
-- Indica la tendencia de corto/mediano plazo
-- Se compara con SMA200 daily para determinar si el mercado es alcista o bajista
+- Indica tendencia de corto/mediano plazo
+- Cuando precio > SMA50 > SMA200: tendencia ALCISTA
 
 #### SMA200 Daily
 - Promedio de los últimos 200 cierres diarios (~9 meses)
-- El indicador más seguido por traders e institucionales
-- **Uso en CryptoSeeker:** timing de entrada — indica si el momentum empezó a recuperarse
-- Cuando el precio está por encima: tendencia alcista, momentum positivo
-- Cuando el precio está por debajo: tendencia bajista, momentum negativo
+- Referencia de mediano plazo, muy seguido por institucionales
+- Usado para timing de entrada: indica si el momentum empezó a recuperarse
 
 #### SMA200 Weekly
 - Promedio de los últimos 200 cierres semanales (~4 años)
-- Incluye los ciclos bajistas de 2022-2023, por eso su valor es mucho más bajo que el daily
-- **Uso en CryptoSeeker:** zona de acumulación macro
-- Históricamente BTC nunca cerró mucho tiempo por debajo de esta SMA
-- Zona de acumulación: precio dentro del 20% sobre la SMA200 weekly
+- Soporte macro histórico de BTC — nunca cerró mucho tiempo por debajo
+- Base del sistema de zonas de acumulación:
+  - `ZONA_ACUMULACION`: dentro del **15%** sobre SMA200w — zona real de compra en tranches
+  - `ZONA_VIGILANCIA`: entre **15% y 20%** sobre SMA200w — empezar a prestar atención
+  - `BAJO_SMA200_WEEKLY`: por debajo — zona extrema histórica, acumular fuerte
+  - `MERCADO_ALTO`: más del 20% sobre SMA200w — fuera de zona óptima
 
-#### Bitcoin Dominance ajustada
-- Fórmula estándar: BTC market cap / Total market cap * 100
-- Fórmula ajustada: BTC market cap / (Total market cap - Stablecoin market cap) * 100
-- La diferencia entre ambas indica cuánto capital está refugiado en stablecoins
-- Alta dominance ajustada (>60%): altcoins débiles, mercado favorable para BTC
-- Baja dominance ajustada (<50%): posible temporada de altcoins
+#### SMA200 Weekly Slope
+- Compara el valor actual de la SMA200w con el de hace 4 semanas
+- SUBIENDO: tendencia macro alcista sostenida
+- BAJANDO: deterioro de la tendencia macro
 
-### Indicadores en roadmap
+#### Pi Cycle Top Indicator
+- Dos medias móviles: SMA_111 y 2×SMA_350 (requiere 350+ días de datos diarios)
+- Cuando SMA_111 cruza POR ENCIMA de 2×SMA_350 → señal histórica de techo de ciclo
+- Mientras SMA_111 < 2×SMA_350: bull market en progreso
+- El gap porcentual indica cuán lejos estamos del cruce (top)
 
-#### Fibonacci Retracement
-- Niveles clave: 23.6%, 38.2%, 50%, 61.8%, 78.6%
-- Se calcula entre el último máximo y mínimo significativo del ciclo
-- Permite identificar zonas de soporte donde el precio podría rebotar
-- La confluencia SMA200 weekly + nivel Fibonacci = señal de acumulación más fuerte
+#### ATH Distance
+- Distancia porcentual entre el precio actual y el máximo histórico
+- Calculado sobre el historial de 210 semanas (cubre ciclos 2021 y 2024)
+- En bull sano, el ATH del ciclo anterior actúa como soporte
+
+### Indicadores de ciclo macro
+
+#### Fear & Greed Index
+- Escala 0-100: 0 = miedo extremo, 100 = codicia extrema
+- Indicador contrarian: miedo extremo sostenido = bottom, codicia extrema sostenida = top
+- Se calcula tendencia de 7 días para detectar si el sentimiento mejora o empeora
+
+#### Bitcoin Dominance Trend (30d)
+- Compara dominance de BTC hoy vs hace 30 días
+- Dominance subiendo: capital fluyendo a BTC (early bull o refugio en bear)
+- Dominance bajando: capital saliendo a alts — posible altseason (late bull)
+
+### Indicadores de altcoins
+
+#### RSI(14)
+- Relative Strength Index con suavizado de Wilder (estándar)
+- RSI < 35: sobrevendido fuerte → señal de acumulación
+- RSI > 70: sobrecomprado → no acumular, esperar corrección
+- Funciona desde ~30 velas, útil para coins con historial limitado
+
+#### Ratio vs BTC (30d)
+- Cuánto BTC vale 1 unidad de la altcoin, hoy vs hace 30 días
+- Mide alpha real: si la altcoin no gana vs BTC, es mejor quedarse en BTC
+- Para coins sin par BTC directo en el exchange: ratio sintético = precio_alt_USD / precio_BTC_USD
+
+#### P/S Ratio (DeFiLlama)
+- Market cap / revenue anualizado (fees últimos 30d × 12)
+- Solo para protocolos DeFi con fees medibles (ej: Hyperliquid)
+- Referencia TradFi: Robinhood ~6x, CME ~18x
+- < 10x = potencialmente barato | 10–25x = razonable | > 25x = caro
 
 ---
 
-## Capa 3 — AI Agents
+## Capa 3 — Agents
 
-### Estado actual: rule-based
-El módulo `agents/analyzer.py` implementa lógica de reglas (if/else) para generar señales.
-No hay LLM todavía — el comentario en el código marca dónde se integrará.
+### `analizar_btc()` — Señal combinada
+Cruza el contexto macro (SMA200 weekly) con la tendencia daily (SMA50 + SMA200 daily):
 
-### Señal combinada (implementada)
-Cruza el contexto macro (SMA200 weekly) con la tendencia daily (SMA200 daily):
+| SMA200 Weekly         | SMA200 Daily        | Señal                |
+|-----------------------|---------------------|----------------------|
+| Bajo SMA200 weekly    | Cualquiera          | ACUMULAR             |
+| Zona acumul. (≤15%)   | Recuperándose       | ACUMULAR             |
+| Zona acumul. (≤15%)   | Todavía bajando     | ESPERAR CONFIRMACION |
+| Zona vigil. (15–20%)  | Cualquiera          | ESPERAR CONFIRMACION |
+| Lejos de zona (>20%)  | Cualquiera          | FUERA DE ZONA        |
 
-| SMA200 Weekly       | SMA200 Daily        | Señal                |
-|---------------------|---------------------|----------------------|
-| Bajo SMA200 weekly  | Cualquiera          | ACUMULAR             |
-| Zona acumulación    | Recuperándose       | ACUMULAR             |
-| Zona acumulación    | Todavía bajando     | ESPERAR CONFIRMACION |
-| Lejos de zona       | Cualquiera          | FUERA DE ZONA        |
+### `analizar_ciclo_macro()` — Indicadores de ciclo
+Consolida Fear & Greed, dominance trend, SMA200w slope, ATH distance y Pi Cycle Top
+en un único objeto de análisis para mostrar en el reporte de ciclo macro.
+
+### `analizar_altcoin()` — Señal por coin
+Evalúa cada altcoin de forma independiente de BTC usando SMA200 daily, SMA50 daily,
+RSI(14) y ratio vs BTC. La señal (ACUMULAR / ESPERAR / FUERA DE ZONA) es propia de
+cada coin — la decisión de mostrarla depende del contexto macro de BTC.
 
 ### Análisis fundamental (roadmap)
-- **Fuente de datos:** CryptoPanic API (agregador de noticias crypto, free tier sin API key)
-- **Interpretación:** Claude API (Anthropic) genera un párrafo de contexto
-- **Frecuencia:** una vez al día (no cada 4 horas como el análisis técnico)
-- **Requiere:** `ANTHROPIC_API_KEY` en el `.env`
-- **Costo estimado:** centavos por día usando claude-haiku (modelo más económico)
-- **Scope:** BTC primero, luego altcoins (máx 10 coins en total)
-
-### Altcoins (roadmap)
-- TAO (BitTensor) y Venice son las primeras en incorporarse
-- Lógica: cuando BTC entra en zona de acumulación, alertar también sobre TAO y Venice
-- Los altcoins históricamente siguen a BTC: si BTC acumula, ellos también pueden hacerlo
+- CryptoPanic → noticias recientes por coin
+- Claude API → interpreta el contexto e indica si valida o invalida la thesis de inversión
+- Frecuencia: una vez al día (no cada 4 horas)
+- Requiere: `ANTHROPIC_API_KEY` en `.env`
 
 ---
 
 ## Capa 4 — Output
 
-### Consola (implementado)
-Reporte estructurado con secciones:
-- Precio actual
-- SMA200 weekly (contexto macro)
-- SMA200 daily (tendencia mediano plazo)
-- SMA50 daily (tendencia corto plazo)
-- Señal combinada con tabla resaltando la fila activa
-- Contexto estratégico (explicación en lenguaje natural)
-- Bitcoin Dominance
+### Consola
+Reporte estructurado con secciones en cada ejecución:
+1. Precio actual
+2. SMA200 weekly (contexto macro + zona)
+3. SMA200 daily y SMA50 daily (tendencia)
+4. Señal combinada con tabla resaltando la fila activa
+5. Contexto estratégico
+6. **Ciclo Macro**: Fear & Greed, dominance trend, SMA200w slope, ATH distance, Pi Cycle Top
+7. Bitcoin Dominance ajustada
+8. Altcoins (detallado si BTC en zona, resumen breve si no)
 
-### Telegram (roadmap inmediato)
-- La función `formatear_para_telegram()` ya está escrita en `outputs/notifier.py`
-- Falta: crear bot en BotFather, agregar `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` al `.env`
-- Librería a usar: `python-telegram-bot` (más completa que requests directo)
+### Telegram
+- Alerta enviada únicamente cuando la señal BTC **cambia** (sin spam)
+- Estado de señal persistido en `logs/signal_state.json`
+- Altcoins silenciadas excluidas del mensaje (salvo cambio de señal BTC)
+- Incluye resumen compacto del ciclo macro (Fear & Greed, slope, ATH, Pi Cycle si hay alerta)
 
-### HTML (roadmap)
-- Reporte visual para toma rápida de decisiones
-- Diseño limpio con semáforos de colores según señal
+### HTML + email (roadmap)
+- Dashboard organizado para el ciclo completo de inversión (acumulación y take profit)
+- Sección BTC: ciclo, señal, indicadores macro con contexto narrativo
+- Sección altcoins general: contexto de mercado, altseason, alpha vs BTC
+- Sección individual por coin: señal, fundamentals, thesis, riesgos
+- Envío por email en cada ejecución o solo al cambiar señal
+
+---
+
+## Coins monitoreadas
+
+| Coin | Exchange | Señal individual | P/S ratio | Estado |
+|------|----------|-----------------|-----------|--------|
+| BTC | Binance | Señal combinada | — | ✅ Implementado |
+| TAO (BitTensor) | Binance | ✅ SMA + RSI + ratio BTC | — | ✅ Implementado |
+| VVV (Venice) | Coinbase | ✅ SMA + RSI + ratio sintético | — | ✅ Implementado |
+| HYPE (Hyperliquid) | Binance | ✅ SMA + RSI + ratio sintético | ✅ DeFiLlama | ✅ Implementado |
+| Solana y otras | TBD | Pendiente | TBD | Roadmap |
+
+Máximo recomendado: ~10 coins para no sobrecargar el reporte.
 
 ---
 
@@ -153,23 +214,13 @@ Reporte estructurado con secciones:
 - VM Ubuntu Server 24.04 LTS (minimized) en HP ProLiant Gen8
 - Docker + Docker Compose para portabilidad
 - Cron job del host: `docker compose run --rm cryptoseeker` cada 4 horas
+- Logs: `~/CryptoSeeker/logs/cron.log`
+- Estado de señal: `~/CryptoSeeker/logs/signal_state.json`
 - Ver guía completa: [cryptoseeker_deploy_v1.md](cryptoseeker_deploy_v1.md)
 
 ### Producción (futuro)
 - VPS o infraestructura más estable
 - Posiblemente systemd en lugar de cron para mejor manejo de errores
-- Monitoreo de uptime
-
----
-
-## Coins monitoreadas
-
-| Coin | Estado | Notas |
-|------|--------|-------|
-| BTC | ✅ Implementado | Base del sistema |
-| TAO (BitTensor) | Roadmap | Altcoin de interés principal |
-| Venice (VVV) | Roadmap | Altcoin de interés principal |
-| Otras | Roadmap | Máximo 10 coins en total |
 
 ---
 
@@ -177,10 +228,8 @@ Reporte estructurado con secciones:
 
 | Librería | Uso | Estado |
 |----------|-----|--------|
-| ccxt | Conexión a exchanges (Binance) | ✅ Instalada |
-| pandas | Manipulación de datos | ✅ Instalada |
-| requests | Llamadas HTTP a CoinGecko | ✅ Instalada |
-| python-dotenv | Variables de entorno | ✅ Instalada |
-| anthropic | Claude API para LLM | Roadmap |
-| python-telegram-bot | Envío de alertas | Roadmap |
-| pandas-ta | Indicadores técnicos adicionales | Removida temporalmente (conflicto con pandas 2.x) |
+| ccxt | Conexión a exchanges (Binance, Coinbase, Kraken) | ✅ |
+| pandas | Manipulación de DataFrames OHLCV | ✅ |
+| requests | HTTP a CoinGecko, Alternative.me, DeFiLlama | ✅ |
+| python-dotenv | Variables de entorno | ✅ |
+| anthropic | Claude API para análisis fundamental LLM | Roadmap |

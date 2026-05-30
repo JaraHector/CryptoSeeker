@@ -97,7 +97,18 @@ cp .env.example .env
 nano .env
 ```
 
-Completar en el `.env` las API keys necesarias. Guardar con `Ctrl+O`, salir con `Ctrl+X`.
+Completar en el `.env`:
+
+```
+# Telegram — requerido para alertas
+TELEGRAM_BOT_TOKEN=tu_token_aqui
+TELEGRAM_CHAT_ID=tu_chat_id_aqui
+
+# Claude API — requerido para análisis fundamental (roadmap, no obligatorio ahora)
+# ANTHROPIC_API_KEY=tu_key_aqui
+```
+
+Guardar con `Ctrl+O`, salir con `Ctrl+X`.
 
 ---
 
@@ -149,4 +160,8 @@ El cron no necesita modificarse.
 | Containerización | Docker + Docker Compose |
 | Scheduler | cron (nativo del OS) |
 | Lenguaje | Python 3.11 |
-| Fuentes de datos | Binance (ccxt), CoinGecko |
+| Datos de precio | Binance, Coinbase, Kraken (via ccxt) |
+| Datos de mercado | CoinGecko (dominance, market cap histórico) |
+| Sentimiento | Alternative.me (Fear & Greed Index) |
+| Fundamentals DeFi | DeFiLlama (P/S ratio, revenue) |
+| Análisis LLM | Claude API / Anthropic (roadmap) |

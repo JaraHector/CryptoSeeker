@@ -10,3 +10,6 @@ requests==2.32.3
 
 # Carga de variables de entorno desde .env
 python-dotenv==1.0.1
+
+# Claude API — análisis fundamental (CryptoPanic + LLM)
+anthropic>=0.49.0

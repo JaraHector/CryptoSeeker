@@ -7,6 +7,7 @@ Flujo:
   2. Traer candles semanales de BTC (SMA200 weekly)
   3. Traer dominance de BTC + trend 30d desde CoinGecko
   4. Traer Fear & Greed Index desde Alternative.me
+  4.5 Análisis fundamental via CryptoPanic + Claude API (1 vez al día, cacheado)
   5. Traer candles diarias de cada altcoin activa (SMA50, SMA200, RSI) + ratio vs BTC
   6. Analizar los datos con el agente (BTC + ciclo macro + altcoins)
   7. Imprimir el reporte en consola
@@ -22,6 +23,7 @@ from pipeline.indicators import (
 )
 from pipeline.dominance import get_btc_dominance, get_btc_dominance_trend
 from agents.analyzer import analizar_btc, analizar_dominance, analizar_altcoin, analizar_ciclo_macro
+from agents.fundamental_analyzer import get_fundamental_analysis
 from outputs.notifier import imprimir_reporte, formatear_para_telegram
 from outputs.telegram import send_alert_if_changed
 from config.altcoins import ALTCOINS
@@ -88,6 +90,10 @@ def run():
     btc_price_now    = df_daily.iloc[-1]["close"]
     btc_price_30d_ago = df_daily.iloc[-31]["close"] if len(df_daily) >= 31 else None
 
+    # --- Paso 4.5: Análisis fundamental (CryptoPanic + Claude API, 1 vez al día) ---
+    coins_activas = ["BTC"] + [c["nombre"] for c in ALTCOINS if c.get("activo", True)]
+    analisis_fundamental = get_fundamental_analysis(coins_activas)
+
     # --- Paso 5: Altcoins (SMA, RSI, ratio vs BTC, P/S si aplica) ---
     analisis_altcoins = []
     for coin in ALTCOINS:
@@ -152,10 +158,10 @@ def run():
     analisis_ciclo = analizar_ciclo_macro(indicadores_ciclo)
 
     # --- Paso 7: Reporte en consola ---
-    imprimir_reporte(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo)
+    imprimir_reporte(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo, analisis_fundamental)
 
     # --- Paso 8: Alerta Telegram (solo si la señal cambió) ---
-    mensaje_telegram = formatear_para_telegram(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo)
+    mensaje_telegram = formatear_para_telegram(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo, analisis_fundamental)
     send_alert_if_changed(mensaje_telegram, analisis_btc["signal_combinada"])
 
 

@@ -11,10 +11,11 @@ def imprimir_reporte(
     analisis_dominance: dict,
     analisis_altcoins: list = None,
     analisis_ciclo: dict = None,
+    analisis_fundamental: dict = None,
 ) -> None:
     """
     Imprime en consola el reporte completo con contexto estratégico.
-    Orden: BTC técnico → Ciclo Macro → Dominance → Altcoins.
+    Orden: BTC técnico → Ciclo Macro → Fundamentals BTC → Dominance → Altcoins.
     """
     timestamp  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sep_grueso = "=" * 62
@@ -155,6 +156,10 @@ def imprimir_reporte(
     if analisis_ciclo:
         _imprimir_ciclo_macro(analisis_ciclo, sep_fino)
 
+    # ── FUNDAMENTALS BTC ──────────────────────────────────────────
+    if analisis_fundamental and "BTC" in analisis_fundamental:
+        _imprimir_fundamental(analisis_fundamental["BTC"], "BTC", sep_fino)
+
     # ── DOMINANCE ─────────────────────────────────────────────────
     print(f"\n{sep_fino}")
     print("  🌐 BITCOIN DOMINANCE")
@@ -189,7 +194,8 @@ def imprimir_reporte(
         print("    < 10x = barato  |  10–25x = razonable  |  > 25x = caro.")
 
         for alt in altcoins_activas:
-            _imprimir_altcoin(alt, sep_fino)
+            fund = (analisis_fundamental or {}).get(alt["nombre"])
+            _imprimir_altcoin(alt, sep_fino, fund)
 
     elif altcoins_activas and not btc_en_zona:
         # BTC fuera de zona: mostrar altcoins brevemente sin detalle
@@ -209,7 +215,7 @@ def imprimir_reporte(
     print(f"\n{sep_grueso}\n")
 
 
-def _imprimir_altcoin(alt: dict, sep_fino: str) -> None:
+def _imprimir_altcoin(alt: dict, sep_fino: str, fundamental: dict = None) -> None:
     """Imprime el bloque de análisis detallado de una altcoin."""
     nombre   = alt["nombre"]
     precio   = alt["precio_actual"]
@@ -290,6 +296,45 @@ def _imprimir_altcoin(alt: dict, sep_fino: str) -> None:
         "SIN_DATOS":            "— Sin datos suficientes.",
     }
     print(f"  Señal:        {etiquetas_signal.get(signal, signal)}")
+
+    # Fundamentals (si están disponibles para esta coin)
+    if fundamental:
+        _imprimir_fundamental(fundamental, nombre, sep_fino, indent="  ")
+
+
+def _imprimir_fundamental(fund: dict, coin: str, sep_fino: str, indent: str = "") -> None:
+    """Imprime el bloque de análisis fundamental de una coin."""
+    thesis      = fund.get("thesis_valida")
+    resumen     = fund.get("resumen", "")
+    positivas   = fund.get("señales_positivas", [])
+    negativas   = fund.get("señales_negativas", [])
+    fecha       = fund.get("fecha", "")
+
+    if indent == "":
+        # Sección de primer nivel (BTC standalone)
+        print(f"\n{sep_fino}")
+        print(f"  📰 FUNDAMENTALS — {coin}  ({fecha})")
+        print(sep_fino)
+    else:
+        # Subsección dentro de altcoin
+        print(f"\n{indent}📰 Fundamentals  ({fecha})")
+
+    thesis_emojis = {True: "✅", False: "🔴", None: "⚪"}
+    thesis_labels = {True: "THESIS VÁLIDA", False: "THESIS EN RIESGO", None: "INFORMACIÓN INSUFICIENTE"}
+    print(f"{indent}  Thesis:  {thesis_emojis.get(thesis, '⚪')} {thesis_labels.get(thesis, '—')}")
+
+    if resumen:
+        print(f"{indent}  Contexto: {resumen}")
+
+    if positivas:
+        print(f"{indent}  Señales positivas:")
+        for s in positivas:
+            print(f"{indent}    + {s}")
+
+    if negativas:
+        print(f"{indent}  Señales negativas:")
+        for s in negativas:
+            print(f"{indent}    - {s}")
 
 
 def _imprimir_ciclo_macro(ciclo: dict, sep_fino: str) -> None:
@@ -379,6 +424,7 @@ def formatear_para_telegram(
     analisis_dominance: dict,
     analisis_altcoins: list = None,
     analisis_ciclo: dict = None,
+    analisis_fundamental: dict = None,
 ) -> str:
     """
     Genera el texto formateado para enviar por Telegram.
@@ -438,6 +484,15 @@ def formatear_para_telegram(
 
         mensaje += "\n".join(ciclo_lineas)
 
+    # Fundamentals BTC: resumen compacto
+    if analisis_fundamental and "BTC" in analisis_fundamental:
+        fund_btc    = analisis_fundamental["BTC"]
+        thesis      = fund_btc.get("thesis_valida")
+        resumen     = fund_btc.get("resumen", "")
+        thesis_tag  = {True: "✅ válida", False: "🔴 en riesgo", None: "⚪ sin datos"}.get(thesis, "")
+        if resumen:
+            mensaje += f"\n\n*— Fundamentals BTC —*\nThesis: {thesis_tag}\n_{resumen}_"
+
     # Altcoins: incluir solo no silenciadas cuando BTC está en zona
     btc_en_zona = signal in ("ACUMULAR", "ESPERAR_CONFIRMACION")
     altcoins_visibles = [
@@ -448,12 +503,13 @@ def formatear_para_telegram(
     if altcoins_visibles and btc_en_zona:
         mensaje += "\n\n*— Altcoins —*"
         for alt in altcoins_visibles:
-            mensaje += _formatear_altcoin_telegram(alt)
+            fund = (analisis_fundamental or {}).get(alt["nombre"])
+            mensaje += _formatear_altcoin_telegram(alt, fund)
 
     return mensaje
 
 
-def _formatear_altcoin_telegram(alt: dict) -> str:
+def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None) -> str:
     """Genera el bloque Telegram para una altcoin."""
     nombre   = alt["nombre"]
     precio   = alt["precio_actual"]
@@ -491,5 +547,10 @@ def _formatear_altcoin_telegram(alt: dict) -> str:
         ps_emojis = {"BARATO": "🟢", "RAZONABLE": "🟡", "CARO": "🟠", "MUY_CARO": "🔴"}
         emoji_ps = ps_emojis.get(ps_interp, "⚪")
         lineas.append(f"P/S: {ps_ratio}x {emoji_ps} ({ps_interp.lower().replace('_', ' ')})")
+
+    if fundamental:
+        thesis     = fundamental.get("thesis_valida")
+        thesis_tag = {True: "✅ válida", False: "🔴 en riesgo", None: "⚪ sin datos"}.get(thesis, "")
+        lineas.append(f"Thesis: {thesis_tag}")
 
     return "\n".join(lineas)
