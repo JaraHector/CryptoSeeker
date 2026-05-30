@@ -8,7 +8,7 @@ import json
 import os
 from datetime import datetime
 from anthropic import Anthropic
-from data.cryptopanic_client import get_news
+from data.news_client import get_news
 
 _MODEL      = "claude-haiku-4-5-20251001"
 _CACHE_FILE = "logs/fundamental_cache.json"
