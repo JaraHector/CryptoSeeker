@@ -155,6 +155,44 @@ def get_ath_distance(df_weekly: pd.DataFrame, precio_actual: float) -> dict:
     }
 
 
+def get_cross_event(df: pd.DataFrame, fast_col: str = "SMA_50", slow_col: str = "SMA_200", lookback: int = 5) -> str:
+    """
+    Detecta si ocurrió un Death Cross o Golden Cross en las últimas N velas.
+
+    Death Cross:  SMA50 cruza POR DEBAJO de SMA200 — señal bajista estructural
+    Golden Cross: SMA50 cruza POR ARRIBA de SMA200 — señal alcista estructural
+
+    Busca el cruce dentro de las últimas `lookback` velas. Si el estado actual es
+    diferente al estado anterior al lookback, hubo un cruce reciente.
+
+    Args:
+        df:       DataFrame con columnas SMA_50 y SMA_200 ya calculadas.
+        fast_col: Nombre de la columna de la SMA rápida (default SMA_50).
+        slow_col: Nombre de la columna de la SMA lenta (default SMA_200).
+        lookback: Cuántas velas hacia atrás buscar el cruce (default 5).
+
+    Returns:
+        "DEATH_CROSS", "GOLDEN_CROSS" o "NINGUNO".
+    """
+    if fast_col not in df.columns or slow_col not in df.columns:
+        return "NINGUNO"
+
+    valid_df = df[[fast_col, slow_col]].dropna()
+    if len(valid_df) < lookback + 1:
+        return "NINGUNO"
+
+    recent = valid_df.tail(lookback + 1)
+    current_fast_above = recent[fast_col].iloc[-1] > recent[slow_col].iloc[-1]
+
+    # Buscar si en alguna vela previa el estado era diferente al actual
+    for i in range(len(recent) - 1):
+        prev_fast_above = recent[fast_col].iloc[i] > recent[slow_col].iloc[i]
+        if prev_fast_above != current_fast_above:
+            return "GOLDEN_CROSS" if current_fast_above else "DEATH_CROSS"
+
+    return "NINGUNO"
+
+
 def get_latest_indicators(df: pd.DataFrame) -> dict:
     """
     Extrae los valores más recientes del DataFrame ya calculado.

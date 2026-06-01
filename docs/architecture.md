@@ -128,6 +128,20 @@ usando señales técnicas + indicadores de ciclo macro + contexto fundamental.
 - Mide alpha real: si la altcoin no gana vs BTC, es mejor quedarse en BTC
 - Para coins sin par BTC directo en el exchange: ratio sintético = precio_alt_USD / precio_BTC_USD
 
+#### Zonas de altcoin (SMA200d)
+Equivalen al sistema de zonas de BTC pero usando SMA200d como referencia macro:
+- `BAJO_SMA200D`: precio < SMA200d → zona extrema, acumular fuerte
+- `ZONA_ACUMULACION`: ≤20% sobre SMA200d → zona real de compra en tranches
+- `ZONA_VIGILANCIA`: 20–30% sobre SMA200d → empezar a prestar atención
+- `FUERA_DE_ZONA`: >30% sobre SMA200d → no es zona óptima de acumulación
+
+#### Death Cross / Golden Cross (SMA50d vs SMA200d)
+Señales estructurales de cambio de tendencia en los últimos 5 días:
+- `DEATH_CROSS`: SMA50d cruzó por debajo de SMA200d → señal bajista estructural
+- `GOLDEN_CROSS`: SMA50d cruzó por encima de SMA200d → señal alcista estructural
+- `NINGUNO`: sin cruce reciente
+Aplica tanto a BTC (daily) como a cada altcoin.
+
 #### P/S Ratio (DeFiLlama)
 - Market cap / revenue anualizado (fees últimos 30d × 12)
 - Solo para protocolos DeFi con fees medibles (ej: Hyperliquid)
@@ -155,14 +169,27 @@ en un único objeto de análisis para mostrar en el reporte de ciclo macro.
 
 ### `analizar_altcoin()` — Señal por coin
 Evalúa cada altcoin de forma independiente de BTC usando SMA200 daily, SMA50 daily,
-RSI(14) y ratio vs BTC. La señal (ACUMULAR / ESPERAR / FUERA DE ZONA) es propia de
-cada coin — la decisión de mostrarla depende del contexto macro de BTC.
+RSI(14) y ratio vs BTC. Incluye zona SMA200d y detección de cross:
+
+| Zona altcoin      | Señal resultante           |
+|-------------------|----------------------------|
+| BAJO_SMA200D      | ACUMULAR siempre           |
+| ZONA_ACUMULACION  | ACUMULAR o ESPERAR (RSI/SMA50) |
+| ZONA_VIGILANCIA   | ESPERAR_CONFIRMACION       |
+| FUERA_DE_ZONA     | FUERA_DE_ZONA              |
 
 ### Análisis fundamental
 - **Fuentes RSS** (sin API key): CoinDesk + CoinTelegraph + Google News como fallback
 - **Claude API** (claude-haiku-4-5-20251001): interpreta noticias y devuelve `thesis_status`
 - **Frecuencia**: una vez al día, resultado cacheado en `logs/fundamental_cache.json`
 - **Requiere**: `ANTHROPIC_API_KEY` en `.env`
+
+### Conclusión integrada (`get_conclusiones_integradas`)
+- Claude recibe TANTO los indicadores técnicos actuales COMO el analysis fundamental del día
+- Genera una conclusión narrativa en 2-3 oraciones: "¿qué significa esto para mí como inversor?"
+- Aplica a BTC y a cada altcoin activa
+- Sin caché: corre en cada ejecución porque usa datos técnicos del momento
+- Costo: ~4 llamadas a Claude Haiku por ejecución (muy bajo)
 
 #### thesis_status — valores posibles
 | Valor | Significado | Acción sugerida |
@@ -182,19 +209,20 @@ cada coin — la decisión de mostrarla depende del contexto macro de BTC.
 Reporte estructurado con secciones en cada ejecución:
 1. Precio actual
 2. SMA200 weekly (contexto macro + zona)
-3. SMA200 daily y SMA50 daily (tendencia)
+3. SMA200 daily, SMA50 daily (tendencia) + Death/Golden Cross si aplica
 4. Señal combinada con tabla resaltando la fila activa
 5. Contexto estratégico
 6. **Ciclo Macro**: Fear & Greed, dominance trend, SMA200w slope, ATH distance, Pi Cycle Top
 7. **Fundamentals BTC**: thesis_status + resumen + señales positivas/negativas
-8. Bitcoin Dominance ajustada
-9. Altcoins (detallado si BTC en zona, resumen breve si no) — cada coin incluye su thesis_status
+8. **Conclusión integrada BTC**: narrativa técnico + fundamental
+9. Bitcoin Dominance ajustada
+10. Altcoins (detallado si BTC en zona): zona SMA200d, cross, RSI, ratio BTC, P/S, fundamentals, conclusión integrada
 
 ### Telegram
 - Alerta enviada únicamente cuando la señal BTC **cambia** (sin spam)
 - Estado de señal persistido en `logs/signal_state.json`
-- Altcoins silenciadas excluidas del mensaje (salvo cambio de señal BTC)
-- Incluye resumen compacto del ciclo macro (Fear & Greed, slope, ATH, Pi Cycle si hay alerta)
+- Altcoins silenciadas excluidas del mensaje
+- Incluye: zona altcoin, Death/Golden Cross, ciclo macro compacto, conclusión integrada por coin
 
 ### HTML + email (roadmap)
 - Dashboard organizado para el ciclo completo de inversión (acumulación y take profit)

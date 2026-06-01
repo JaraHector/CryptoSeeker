@@ -3,15 +3,16 @@ CryptoSeeker - Punto de entrada principal.
 Orquesta el flujo completo: datos → pipeline → análisis → output.
 
 Flujo:
-  1. Traer candles diarias de BTC (SMA50, SMA200 daily, Pi Cycle 111d/350d)
-  2. Traer candles semanales de BTC (SMA200 weekly)
-  3. Traer dominance de BTC + trend 30d desde CoinGecko
-  4. Traer Fear & Greed Index desde Alternative.me
-  4.5 Análisis fundamental via CryptoPanic + Claude API (1 vez al día, cacheado)
-  5. Traer candles diarias de cada altcoin activa (SMA50, SMA200, RSI) + ratio vs BTC
-  6. Analizar los datos con el agente (BTC + ciclo macro + altcoins)
-  7. Imprimir el reporte en consola
-  8. Enviar alerta Telegram si la señal BTC cambió
+  1.   Candles diarias de BTC (SMA50, SMA200 daily, Pi Cycle 111d/350d)
+  2.   Candles semanales de BTC (SMA200 weekly)
+  3.   Dominance de BTC + trend 30d desde CoinGecko
+  4.   Fear & Greed Index desde Alternative.me
+  4.5  Análisis fundamental (RSS → Claude Haiku, 1 vez al día, cacheado)
+  5.   Candles diarias de cada altcoin activa (SMA50, SMA200, RSI, ratio vs BTC)
+  6.   Analizar BTC + ciclo macro + altcoins
+  6.5  Conclusiones integradas técnico + fundamental (corre cada vez, usa datos actuales)
+  7.   Reporte en consola
+  8.   Alerta Telegram si la señal BTC cambió
 """
 
 from data.exchange_client import get_ohlcv
@@ -19,11 +20,11 @@ from data.defillama_client import get_ps_ratio
 from data.fear_greed_client import get_fear_greed
 from pipeline.indicators import (
     add_sma, add_rsi, add_pi_cycle,
-    get_latest_indicators, get_sma200w_slope, get_ath_distance,
+    get_latest_indicators, get_sma200w_slope, get_ath_distance, get_cross_event,
 )
 from pipeline.dominance import get_btc_dominance, get_btc_dominance_trend
 from agents.analyzer import analizar_btc, analizar_dominance, analizar_altcoin, analizar_ciclo_macro
-from agents.fundamental_analyzer import get_fundamental_analysis
+from agents.fundamental_analyzer import get_fundamental_analysis, get_conclusiones_integradas
 from outputs.notifier import imprimir_reporte, formatear_para_telegram
 from outputs.telegram import send_alert_if_changed
 from config.altcoins import ALTCOINS
@@ -38,7 +39,8 @@ def run():
     df_daily = get_ohlcv(symbol="BTC/USDT", timeframe="1d", limit=400)
     df_daily = add_sma(df_daily, periods=[50, 200])
     df_daily = add_pi_cycle(df_daily)
-    ind_daily = get_latest_indicators(df_daily)
+    ind_daily   = get_latest_indicators(df_daily)
+    btc_cross   = get_cross_event(df_daily)
 
     # --- Paso 2: Candles semanales — SMA200 weekly (~4 años de historia) ---
     print("Trayendo candles semanales de BTC/USDT...")
@@ -63,6 +65,7 @@ def run():
         "distancia_sma200_weekly_pct": ind_weekly["distancia_sma200_pct"],
         "pi_sma111":                  ind_daily.get("pi_sma111"),
         "pi_2x350":                   ind_daily.get("pi_2x350"),
+        "cross_event":                btc_cross,
     }
 
     # --- Paso 3: Dominance desde CoinGecko + trend 30d ---
@@ -102,10 +105,11 @@ def run():
 
         print(f"Trayendo datos de {coin['nombre']} ({coin['symbol']})...")
         try:
-            df_alt = get_ohlcv(symbol=coin["symbol"], timeframe="1d", limit=250, exchange=coin["exchange"])
-            df_alt = add_sma(df_alt, periods=[50, 200])
-            df_alt = add_rsi(df_alt, period=14)
-            ind_alt = get_latest_indicators(df_alt)
+            df_alt   = get_ohlcv(symbol=coin["symbol"], timeframe="1d", limit=250, exchange=coin["exchange"])
+            df_alt   = add_sma(df_alt, periods=[50, 200])
+            df_alt   = add_rsi(df_alt, period=14)
+            ind_alt  = get_latest_indicators(df_alt)
+            ind_alt["cross_event"] = get_cross_event(df_alt)
 
             # Ratio vs BTC: cuánto BTC vale 1 unidad de la altcoin + cambio 30 días
             if coin.get("btc_symbol"):
@@ -157,11 +161,17 @@ def run():
     analisis_dom   = analizar_dominance(dominance_data)
     analisis_ciclo = analizar_ciclo_macro(indicadores_ciclo)
 
+    # --- Paso 6.5: Conclusiones integradas (técnico + fundamental, corre cada vez) ---
+    print("Generando conclusiones integradas...")
+    conclusiones = get_conclusiones_integradas(
+        analisis_btc, analisis_ciclo, analisis_altcoins, analisis_fundamental
+    )
+
     # --- Paso 7: Reporte en consola ---
-    imprimir_reporte(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo, analisis_fundamental)
+    imprimir_reporte(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo, analisis_fundamental, conclusiones)
 
     # --- Paso 8: Alerta Telegram (solo si la señal cambió) ---
-    mensaje_telegram = formatear_para_telegram(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo, analisis_fundamental)
+    mensaje_telegram = formatear_para_telegram(analisis_btc, analisis_dom, analisis_altcoins, analisis_ciclo, analisis_fundamental, conclusiones)
     send_alert_if_changed(mensaje_telegram, analisis_btc["signal_combinada"])
 
 

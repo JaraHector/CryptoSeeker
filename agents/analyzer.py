@@ -16,7 +16,9 @@ ZONA_VIGILANCIA_WEEKLY_PCT  = 20.0
 ZONA_ACUMULACION_WEEKLY_PCT = 15.0
 
 # Umbrales para altcoins (sin contexto weekly)
-ALTCOIN_ZONA_ACUMULACION_PCT = 20.0  # dentro del 20% sobre SMA200 daily = zona de interés
+# Equivale al sistema de zonas de BTC pero usando SMA200d como referencia (≈ SMA200w de BTC)
+ALTCOIN_ZONA_ACUMULACION_PCT = 20.0  # ≤20% sobre SMA200d = zona de compra real
+ALTCOIN_ZONA_VIGILANCIA_PCT  = 30.0  # 20–30% sobre SMA200d = empezar a prestar atención
 ALTCOIN_RSI_OVERSOLD         = 35.0  # RSI < 35 = sobrevendido, señal de acumulación fuerte
 ALTCOIN_RSI_NEUTRO           = 50.0  # RSI < 50 = momentum aún débil
 
@@ -43,6 +45,7 @@ def analizar_btc(indicadores: dict) -> dict:
     tendencia_daily  = _evaluar_tendencia_daily(precio, sma50_daily, sma200_daily)
     nivel_alerta     = _evaluar_nivel_alerta_daily(dist_sma200_daily)
     signal_combinada = _evaluar_signal_combinada(contexto_macro, tendencia_daily)
+    cross_event      = indicadores.get("cross_event", "NINGUNO")
 
     return {
         "activo":               "BTC",
@@ -57,6 +60,7 @@ def analizar_btc(indicadores: dict) -> dict:
         "tendencia_daily":      tendencia_daily,
         "nivel_alerta":         nivel_alerta,
         "signal_combinada":     signal_combinada,
+        "cross_event":          cross_event,
         "requiere_atencion":    contexto_macro in ["ZONA_ACUMULACION", "BAJO_SMA200_WEEKLY"],
     }
 
@@ -112,8 +116,10 @@ def analizar_altcoin(indicadores: dict, config: dict) -> dict:
     ratio_btc    = indicadores.get("ratio_btc")
     cambio_ratio = indicadores.get("cambio_ratio_30d_pct")
 
-    signal       = _evaluar_signal_altcoin(precio, sma50, sma200, dist_sma200, rsi)
+    zona_altcoin = _evaluar_zona_altcoin(dist_sma200)
+    signal       = _evaluar_signal_altcoin(precio, sma50, zona_altcoin, rsi)
     zona_rsi     = _evaluar_zona_rsi(rsi)
+    cross_event  = indicadores.get("cross_event", "NINGUNO")
 
     ps_ratio          = indicadores.get("ps_ratio")
     revenue_anual_usd = indicadores.get("revenue_anual_usd")
@@ -131,6 +137,7 @@ def analizar_altcoin(indicadores: dict, config: dict) -> dict:
         "dist_sma200_daily_pct": dist_sma200,
         "rsi_14":              rsi,
         "zona_rsi":            zona_rsi,
+        "zona_altcoin":        zona_altcoin,
         "ratio_btc":           ratio_btc,
         "cambio_ratio_30d_pct": cambio_ratio,
         "ps_ratio":            ps_ratio,
@@ -138,6 +145,7 @@ def analizar_altcoin(indicadores: dict, config: dict) -> dict:
         "mcap_usd":            mcap_usd,
         "ps_interpretacion":   ps_interpretacion,
         "signal":              signal,
+        "cross_event":         cross_event,
     }
 
 
@@ -247,31 +255,53 @@ def _evaluar_tendencia_daily(precio: float, sma50: float, sma200: float) -> str:
     return "TRANSICION"
 
 
-def _evaluar_signal_altcoin(
-    precio: float, sma50: float, sma200: float, dist_sma200: float, rsi: float
-) -> str:
+def _evaluar_zona_altcoin(dist_sma200: float) -> str:
     """
-    Señal de acumulación para altcoins. Sin contexto weekly — solo daily + RSI.
+    Clasifica la posición de la altcoin respecto a su SMA200 daily.
+    Equivale al sistema de zonas de BTC pero usando SMA200d como referencia macro.
 
-    Lógica:
-    - ACUMULAR:             precio dentro del 20% de la SMA200 daily Y recuperando momentum
-    - ESPERAR_CONFIRMACION: en zona de acumulación pero precio aún cayendo (RSI débil)
-    - FUERA_DE_ZONA:        precio muy por encima de la SMA200 daily, no zona óptima
+    - BAJO_SMA200D:    precio < SMA200d — zona extrema, históricamente rara
+    - ZONA_ACUMULACION: ≤20% sobre SMA200d — zona real de compra en tranches
+    - ZONA_VIGILANCIA:  20–30% sobre SMA200d — empezar a prestar atención
+    - FUERA_DE_ZONA:    >30% sobre SMA200d — no es zona óptima de acumulación
     """
     if dist_sma200 is None:
         return "SIN_DATOS"
+    if dist_sma200 < 0:
+        return "BAJO_SMA200D"
+    if dist_sma200 <= ALTCOIN_ZONA_ACUMULACION_PCT:
+        return "ZONA_ACUMULACION"
+    if dist_sma200 <= ALTCOIN_ZONA_VIGILANCIA_PCT:
+        return "ZONA_VIGILANCIA"
+    return "FUERA_DE_ZONA"
 
-    en_zona = dist_sma200 <= ALTCOIN_ZONA_ACUMULACION_PCT
 
-    if not en_zona:
+def _evaluar_signal_altcoin(precio: float, sma50: float, zona_altcoin: str, rsi: float) -> str:
+    """
+    Señal de acumulación para altcoins basada en zona SMA200d + RSI.
+
+    - BAJO_SMA200D:    ACUMULAR siempre (zona extrema)
+    - ZONA_ACUMULACION: ACUMULAR si RSI/SMA50 confirman momentum; ESPERAR si no
+    - ZONA_VIGILANCIA:  ESPERAR_CONFIRMACION siempre (zona aún no óptima)
+    - FUERA_DE_ZONA:    FUERA_DE_ZONA
+    """
+    if zona_altcoin in ("SIN_DATOS", None):
+        return "SIN_DATOS"
+
+    if zona_altcoin == "FUERA_DE_ZONA":
         return "FUERA_DE_ZONA"
 
-    # En zona de acumulación: el RSI y la relación precio/SMA50 definen si acumular ya
-    rsi_recuperando  = rsi is not None and rsi < ALTCOIN_RSI_NEUTRO
+    if zona_altcoin == "ZONA_VIGILANCIA":
+        return "ESPERAR_CONFIRMACION"
+
+    if zona_altcoin == "BAJO_SMA200D":
+        return "ACUMULAR"
+
+    # ZONA_ACUMULACION: el RSI y la relación precio/SMA50 definen si acumular ya
+    rsi_recuperando    = rsi is not None and rsi < ALTCOIN_RSI_NEUTRO
     precio_sobre_sma50 = (precio > sma50) if sma50 else False
 
     if rsi is not None and rsi < ALTCOIN_RSI_OVERSOLD:
-        # Extremadamente sobrevendido: acumular independiente del SMA50
         return "ACUMULAR"
 
     if precio_sobre_sma50 or rsi_recuperando:

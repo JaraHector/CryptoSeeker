@@ -12,10 +12,11 @@ def imprimir_reporte(
     analisis_altcoins: list = None,
     analisis_ciclo: dict = None,
     analisis_fundamental: dict = None,
+    conclusiones: dict = None,
 ) -> None:
     """
     Imprime en consola el reporte completo con contexto estratégico.
-    Orden: BTC técnico → Ciclo Macro → Fundamentals BTC → Dominance → Altcoins.
+    Orden: BTC técnico → Ciclo Macro → Fundamentals BTC → Conclusión BTC → Dominance → Altcoins.
     """
     timestamp  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sep_grueso = "=" * 62
@@ -95,6 +96,12 @@ def imprimir_reporte(
     }
     print(f"  Tendencia: {etiquetas_tendencia.get(tendencia, tendencia)}")
 
+    cross_event = analisis_btc.get("cross_event", "NINGUNO")
+    if cross_event == "DEATH_CROSS":
+        print("  ⚠️  DEATH CROSS RECIENTE — SMA50 cruzó por debajo de SMA200 (señal bajista estructural).")
+    elif cross_event == "GOLDEN_CROSS":
+        print("  ✨ GOLDEN CROSS RECIENTE — SMA50 cruzó por encima de SMA200 (señal alcista estructural).")
+
     # ── SEÑAL COMBINADA ───────────────────────────────────────────
     print(f"\n{sep_fino}")
     print("  🎯 SEÑAL COMBINADA")
@@ -160,6 +167,13 @@ def imprimir_reporte(
     if analisis_fundamental and "BTC" in analisis_fundamental:
         _imprimir_fundamental(analisis_fundamental["BTC"], "BTC", sep_fino)
 
+    # ── CONCLUSIÓN INTEGRADA BTC ──────────────────────────────────
+    if conclusiones and "BTC" in conclusiones:
+        print(f"\n{sep_fino}")
+        print("  💡 CONCLUSIÓN — BTC")
+        print(sep_fino)
+        print(f"  {conclusiones['BTC']}")
+
     # ── DOMINANCE ─────────────────────────────────────────────────
     print(f"\n{sep_fino}")
     print("  🌐 BITCOIN DOMINANCE")
@@ -194,8 +208,9 @@ def imprimir_reporte(
         print("    < 10x = barato  |  10–25x = razonable  |  > 25x = caro.")
 
         for alt in altcoins_activas:
-            fund = (analisis_fundamental or {}).get(alt["nombre"])
-            _imprimir_altcoin(alt, sep_fino, fund)
+            fund       = (analisis_fundamental or {}).get(alt["nombre"])
+            conclusion = (conclusiones or {}).get(alt["nombre"])
+            _imprimir_altcoin(alt, sep_fino, fund, conclusion)
 
     elif altcoins_activas and not btc_en_zona:
         # BTC fuera de zona: mostrar altcoins brevemente sin detalle
@@ -206,16 +221,20 @@ def imprimir_reporte(
         print("  pero no es el momento de acumular. Resumen rápido:")
         print()
         for alt in altcoins_activas:
-            signal_alt = alt["signal"]
-            etiqueta = {"ACUMULAR": "✅", "ESPERAR_CONFIRMACION": "⏳", "FUERA_DE_ZONA": "📊"}.get(signal_alt, "⚪")
-            precio_alt = alt["precio_actual"]
+            signal_alt   = alt["signal"]
+            zona_alt     = alt.get("zona_altcoin", "")
+            cross_alt    = alt.get("cross_event", "NINGUNO")
+            etiqueta     = {"ACUMULAR": "✅", "ESPERAR_CONFIRMACION": "⏳", "FUERA_DE_ZONA": "📊"}.get(signal_alt, "⚪")
+            zona_tag     = {"BAJO_SMA200D": "🔴", "ZONA_ACUMULACION": "🟠", "ZONA_VIGILANCIA": "🟡", "FUERA_DE_ZONA": "🟢"}.get(zona_alt, "")
+            cross_tag    = " ⚠️DC" if cross_alt == "DEATH_CROSS" else (" ✨GC" if cross_alt == "GOLDEN_CROSS" else "")
+            precio_alt   = alt["precio_actual"]
             silenciado_tag = " [silenciado]" if alt.get("silenciado") else ""
-            print(f"  {etiqueta} {alt['nombre']:<6} ${precio_alt:>12,.4f}  {signal_alt}{silenciado_tag}")
+            print(f"  {etiqueta} {alt['nombre']:<6} ${precio_alt:>12,.4f}  {zona_tag} {signal_alt}{cross_tag}{silenciado_tag}")
 
     print(f"\n{sep_grueso}\n")
 
 
-def _imprimir_altcoin(alt: dict, sep_fino: str, fundamental: dict = None) -> None:
+def _imprimir_altcoin(alt: dict, sep_fino: str, fundamental: dict = None, conclusion: str = None) -> None:
     """Imprime el bloque de análisis detallado de una altcoin."""
     nombre   = alt["nombre"]
     precio   = alt["precio_actual"]
@@ -232,8 +251,25 @@ def _imprimir_altcoin(alt: dict, sep_fino: str, fundamental: dict = None) -> Non
 
     silenciado_tag = "  [silenciado — solo consola]" if silenciado else ""
 
+    zona_altcoin = alt.get("zona_altcoin", "SIN_DATOS")
+    cross_event  = alt.get("cross_event", "NINGUNO")
+
+    etiquetas_zona_alt = {
+        "BAJO_SMA200D":    "🔴 BAJO SMA200D — zona extrema, acumular fuerte.",
+        "ZONA_ACUMULACION":"🟠 ZONA ACUMULACION — dentro del 20% de SMA200d.",
+        "ZONA_VIGILANCIA": "🟡 ZONA VIGILANCIA — entre 20-30% de SMA200d. Empezar a prestar atención.",
+        "FUERA_DE_ZONA":   "🟢 FUERA DE ZONA — más del 30% sobre SMA200d.",
+        "SIN_DATOS":       "— Sin datos",
+    }
+
     print(f"\n  ── {nombre} ({alt['symbol']}){silenciado_tag}")
     print(f"  Precio:       ${precio:,.4f}")
+    print(f"  Zona:         {etiquetas_zona_alt.get(zona_altcoin, zona_altcoin)}")
+
+    if cross_event == "DEATH_CROSS":
+        print("  ⚠️  DEATH CROSS RECIENTE — señal bajista estructural (SMA50 cruzó bajo SMA200).")
+    elif cross_event == "GOLDEN_CROSS":
+        print("  ✨ GOLDEN CROSS RECIENTE — señal alcista estructural (SMA50 cruzó sobre SMA200).")
 
     if sma200 is not None:
         dir200 = "sobre" if dist200 >= 0 else "bajo"
@@ -300,6 +336,10 @@ def _imprimir_altcoin(alt: dict, sep_fino: str, fundamental: dict = None) -> Non
     # Fundamentals (si están disponibles para esta coin)
     if fundamental:
         _imprimir_fundamental(fundamental, nombre, sep_fino, indent="  ")
+
+    # Conclusión integrada técnico + fundamental
+    if conclusion:
+        print(f"\n  💡 Conclusión: {conclusion}")
 
 
 def _imprimir_fundamental(fund: dict, coin: str, sep_fino: str, indent: str = "") -> None:
@@ -449,6 +489,7 @@ def formatear_para_telegram(
     analisis_altcoins: list = None,
     analisis_ciclo: dict = None,
     analisis_fundamental: dict = None,
+    conclusiones: dict = None,
 ) -> str:
     """
     Genera el texto formateado para enviar por Telegram.
@@ -477,13 +518,20 @@ def formatear_para_telegram(
     dir200w = "sobre" if dist200w >= 0 else "bajo"
     dir200d = "sobre" if dist200d >= 0 else "bajo"
 
+    cross_btc = analisis_btc.get("cross_event", "NINGUNO")
+    cross_btc_linea = ""
+    if cross_btc == "DEATH_CROSS":
+        cross_btc_linea = "\n⚠️ *DEATH CROSS reciente* — SMA50 cruzó bajo SMA200"
+    elif cross_btc == "GOLDEN_CROSS":
+        cross_btc_linea = "\n✨ *GOLDEN CROSS reciente* — SMA50 cruzó sobre SMA200"
+
     mensaje = (
         f"{emoji} *CryptoSeeker — BTC Report*\n"
         f"_{timestamp}_\n\n"
         f"*Precio:* ${precio:,.2f}\n\n"
         f"*SMA200 weekly:* ${sma200w:,.2f} ({abs(dist200w):.1f}% {dir200w})\n"
         f"*SMA200 daily:*  ${sma200d:,.2f} ({abs(dist200d):.1f}% {dir200d})\n\n"
-        f"*Señal:* {etiquetas.get(signal, signal)}\n\n"
+        f"*Señal:* {etiquetas.get(signal, signal)}{cross_btc_linea}\n\n"
         f"*Dominance ajustada:* {analisis_dominance['dominance_adjusted_pct']}%\n"
         f"_{analisis_dominance['interpretacion']}_"
     )
@@ -517,6 +565,10 @@ def formatear_para_telegram(
         if resumen:
             mensaje += f"\n\n*— Fundamentals BTC —*\nThesis: {thesis_tag}\n_{resumen}_"
 
+    # Conclusión integrada BTC
+    if conclusiones and "BTC" in conclusiones:
+        mensaje += f"\n\n*💡 Conclusión:* _{conclusiones['BTC']}_"
+
     # Altcoins: incluir solo no silenciadas cuando BTC está en zona
     btc_en_zona = signal in ("ACUMULAR", "ESPERAR_CONFIRMACION")
     altcoins_visibles = [
@@ -527,8 +579,9 @@ def formatear_para_telegram(
     if altcoins_visibles and btc_en_zona:
         mensaje += "\n\n*— Altcoins —*"
         for alt in altcoins_visibles:
-            fund = (analisis_fundamental or {}).get(alt["nombre"])
-            mensaje += _formatear_altcoin_telegram(alt, fund)
+            fund       = (analisis_fundamental or {}).get(alt["nombre"])
+            conclusion = (conclusiones or {}).get(alt["nombre"])
+            mensaje   += _formatear_altcoin_telegram(alt, fund, conclusion)
 
     return mensaje
 
@@ -546,7 +599,7 @@ def _thesis_tag_telegram(thesis_status: str) -> str:
     return tags.get(thesis_status, "⚪ sin datos")
 
 
-def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None) -> str:
+def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None, conclusion: str = None) -> str:
     """Genera el bloque Telegram para una altcoin."""
     nombre   = alt["nombre"]
     precio   = alt["precio_actual"]
@@ -563,7 +616,23 @@ def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None) -> str:
     }
     emoji = emojis_signal.get(signal, "⚪")
 
+    zona_altcoin = alt.get("zona_altcoin", "SIN_DATOS")
+    cross_event  = alt.get("cross_event", "NINGUNO")
+
+    zonas_telegram = {
+        "BAJO_SMA200D":    "🔴 BAJO SMA200D",
+        "ZONA_ACUMULACION":"🟠 ZONA ACUM",
+        "ZONA_VIGILANCIA": "🟡 ZONA VIGIL",
+        "FUERA_DE_ZONA":   "🟢 FUERA ZONA",
+    }
+
     lineas = [f"\n\n{emoji} *{nombre}* (${precio:,.4f})"]
+    lineas.append(f"Zona: {zonas_telegram.get(zona_altcoin, zona_altcoin)}")
+
+    if cross_event == "DEATH_CROSS":
+        lineas.append("⚠️ DEATH CROSS reciente")
+    elif cross_event == "GOLDEN_CROSS":
+        lineas.append("✨ GOLDEN CROSS reciente")
 
     if dist200 is not None:
         dir200 = "sobre" if dist200 >= 0 else "bajo"
@@ -588,5 +657,8 @@ def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None) -> str:
     if fundamental:
         thesis = fundamental.get("thesis_status", "SIN_DATOS")
         lineas.append(f"Thesis: {_thesis_tag_telegram(thesis)}")
+
+    if conclusion:
+        lineas.append(f"💡 _{conclusion}_")
 
     return "\n".join(lineas)
