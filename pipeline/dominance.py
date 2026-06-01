@@ -96,7 +96,8 @@ def get_btc_dominance_trend() -> dict:
             "trend":               trend,
         }
 
-    except Exception:
+    except Exception as e:
+        print(f"  Dominance trend no disponible: {e}")
         return {
             "dominance_hoy_pct":   None,
             "dominance_30d_ago_pct": None,

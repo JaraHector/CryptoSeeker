@@ -91,7 +91,7 @@ def get_global_market_cap_chart(days: int = 31) -> list:
     params = {"days": days, "vs_currency": "usd"}
     response = requests.get(url, params=params, timeout=10)
     response.raise_for_status()
-    return response.json()["market_cap_chart"]["usd"]  # [[timestamp, value], ...]
+    return response.json()["market_cap_chart"]["market_cap"]  # [[timestamp, value], ...]
 
 
 def get_stablecoin_total_market_cap() -> float:
