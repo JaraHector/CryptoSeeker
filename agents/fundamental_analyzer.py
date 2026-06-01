@@ -1,7 +1,16 @@
 """
 Análisis fundamental via Claude API (claude-haiku-4-5-20251001).
-Toma noticias de CoinDesk y CoinTelegraph (RSS) e interpreta si la thesis sigue vigente.
+Toma noticias de CoinDesk, CoinTelegraph y Google News (RSS) e interpreta
+el estado de la thesis de inversión para cada coin.
 Corre UNA VEZ AL DÍA — resultado cacheado en logs/fundamental_cache.json.
+
+thesis_status — posibles valores:
+  ACUMULAR     Fundamentals refuerzan la thesis, buen momento de entrada
+  HOLD         Thesis válida, sin señales de salida, mantener posición
+  WATCH        Señales mixtas, monitorear de cerca antes de actuar
+  TAKE_PROFIT  Fundamentals sugieren techo de ciclo o sobrevaluación
+  STOP_LOSS    Thesis invalidada — hack, competidor, regulación adversa, colapso de narrativa
+  SIN_DATOS    Información insuficiente para determinar
 """
 
 import json
@@ -12,14 +21,17 @@ from data.news_client import get_news
 
 _MODEL      = "claude-haiku-4-5-20251001"
 _CACHE_FILE = "logs/fundamental_cache.json"
-_MAX_TOKENS = 500
+_MAX_TOKENS = 600
 _NEWS_LIMIT = 10
+
+# Valores válidos que Claude puede devolver en thesis_status
+_THESIS_VALORES = {"ACUMULAR", "HOLD", "WATCH", "TAKE_PROFIT", "STOP_LOSS", "SIN_DATOS"}
 
 
 def get_fundamental_analysis(coins: list) -> dict:
     """
     Devuelve el análisis fundamental del día para cada coin.
-    Si ya corrió hoy, devuelve el caché. Si no, llama a CryptoPanic + Claude API.
+    Si ya corrió hoy, devuelve el caché. Si no, llama a RSS + Claude API.
 
     Args:
         coins: Lista de nombres de coin (ej: ["BTC", "TAO", "VVV", "HYPE"]).
@@ -52,18 +64,21 @@ def get_fundamental_analysis(coins: list) -> dict:
 
 
 def _analizar_coin(client: Anthropic, coin: str) -> dict:
-    """Analiza una coin: trae noticias de CryptoPanic y las interpreta con Claude."""
+    """
+    Analiza una coin: trae noticias via RSS y las interpreta con Claude.
+    Devuelve thesis_status (ver valores en el docstring del módulo).
+    """
     noticias = get_news(currencies=[coin], limit=_NEWS_LIMIT)
 
     if not noticias:
-        return _resultado_vacio(coin, "Sin noticias disponibles en CoinDesk ni CoinTelegraph.")
+        return _resultado_vacio(coin, "Sin noticias disponibles en las fuentes RSS.")
 
     noticias_texto = "\n".join([
         f"- [{n['source']}] {n['title']} ({n['published_at']})"
         for n in noticias
     ])
 
-    prompt = f"""Analiza las siguientes noticias recientes de {coin} y determina si la thesis de inversión sigue siendo válida.
+    prompt = f"""Analiza las siguientes noticias recientes de {coin} y determina el estado de la thesis de inversión.
 
 Noticias:
 {noticias_texto}
@@ -71,19 +86,26 @@ Noticias:
 Responde SOLO con JSON válido (sin markdown), con esta estructura exacta:
 {{
   "resumen": "2-3 líneas sobre el contexto fundamental actual",
-  "thesis_valida": true,
+  "thesis_status": "HOLD",
   "señales_positivas": ["señal 1", "señal 2"],
   "señales_negativas": ["señal 1", "señal 2"]
 }}
 
-thesis_valida puede ser true, false, o null si no hay información suficiente."""
+Valores posibles para thesis_status (elegí UNO):
+- "ACUMULAR":     fundamentals refuerzan la thesis, buen momento de entrada
+- "HOLD":         thesis válida, sin señales de salida, mantener posición
+- "WATCH":        señales mixtas, monitorear de cerca antes de actuar
+- "TAKE_PROFIT":  fundamentals sugieren techo de ciclo o sobrevaluación
+- "STOP_LOSS":    thesis invalidada — hack, competidor, colapso de narrativa, regulación adversa
+- "SIN_DATOS":    información insuficiente para determinar (solo si las noticias no aportan contexto fundamental real)"""
 
     try:
         response = client.messages.create(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
             system=(
-                "Eres un analista de inversiones en crypto experimentado. "
+                "Eres un analista de inversiones en crypto experimentado con foco en ciclos de mercado. "
+                "Tu objetivo es ayudar al inversor a decidir cuándo acumular, mantener, vigilar o salir de una posición. "
                 "Respondes siempre en español, de forma concisa y directa. "
                 "Devuelves solo JSON válido sin texto adicional ni bloques de código."
             ),
@@ -91,7 +113,7 @@ thesis_valida puede ser true, false, o null si no hay información suficiente.""
         )
         contenido = response.content[0].text.strip()
 
-        # Limpiar bloques markdown si Claude los incluyó
+        # Limpiar bloques markdown si Claude los incluyó de todas formas
         if "```" in contenido:
             partes    = contenido.split("```")
             contenido = partes[1].lstrip("json").strip() if len(partes) > 1 else contenido
@@ -103,11 +125,16 @@ thesis_valida puede ser true, false, o null si no hay información suficiente.""
     except Exception as e:
         return _resultado_vacio(coin, f"Error llamando a Claude API: {e}")
 
+    # Validar que thesis_status sea un valor conocido
+    thesis_status = resultado.get("thesis_status", "SIN_DATOS")
+    if thesis_status not in _THESIS_VALORES:
+        thesis_status = "SIN_DATOS"
+
     return {
         "coin":              coin,
         "fecha":             datetime.now().strftime("%Y-%m-%d"),
         "resumen":           resultado.get("resumen", ""),
-        "thesis_valida":     resultado.get("thesis_valida"),
+        "thesis_status":     thesis_status,
         "señales_positivas": resultado.get("señales_positivas", []),
         "señales_negativas": resultado.get("señales_negativas", []),
         "fuentes":           [n["url"] for n in noticias[:5]],
@@ -115,11 +142,12 @@ thesis_valida puede ser true, false, o null si no hay información suficiente.""
 
 
 def _resultado_vacio(coin: str, motivo: str) -> dict:
+    """Devuelve un resultado vacío cuando no hay noticias o falla la API."""
     return {
         "coin":              coin,
         "fecha":             datetime.now().strftime("%Y-%m-%d"),
         "resumen":           motivo,
-        "thesis_valida":     None,
+        "thesis_status":     "SIN_DATOS",
         "señales_positivas": [],
         "señales_negativas": [],
         "fuentes":           [],

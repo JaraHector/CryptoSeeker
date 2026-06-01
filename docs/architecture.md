@@ -158,11 +158,21 @@ Evalúa cada altcoin de forma independiente de BTC usando SMA200 daily, SMA50 da
 RSI(14) y ratio vs BTC. La señal (ACUMULAR / ESPERAR / FUERA DE ZONA) es propia de
 cada coin — la decisión de mostrarla depende del contexto macro de BTC.
 
-### Análisis fundamental (roadmap)
-- CryptoPanic → noticias recientes por coin
-- Claude API → interpreta el contexto e indica si valida o invalida la thesis de inversión
-- Frecuencia: una vez al día (no cada 4 horas)
-- Requiere: `ANTHROPIC_API_KEY` en `.env`
+### Análisis fundamental
+- **Fuentes RSS** (sin API key): CoinDesk + CoinTelegraph + Google News como fallback
+- **Claude API** (claude-haiku-4-5-20251001): interpreta noticias y devuelve `thesis_status`
+- **Frecuencia**: una vez al día, resultado cacheado en `logs/fundamental_cache.json`
+- **Requiere**: `ANTHROPIC_API_KEY` en `.env`
+
+#### thesis_status — valores posibles
+| Valor | Significado | Acción sugerida |
+|-------|------------|-----------------|
+| `ACUMULAR` | Fundamentals refuerzan la thesis | Buen momento de entrada |
+| `HOLD` | Thesis válida, sin señales de salida | Mantener posición |
+| `WATCH` | Señales mixtas | Monitorear antes de actuar |
+| `TAKE_PROFIT` | Señales de techo o sobrevaluación | Considerar salida parcial |
+| `STOP_LOSS` | Thesis invalidada (hack, competidor, regulación) | Salir para limitar daño |
+| `SIN_DATOS` | Información insuficiente | No actuar por fundamentals |
 
 ---
 
@@ -176,8 +186,9 @@ Reporte estructurado con secciones en cada ejecución:
 4. Señal combinada con tabla resaltando la fila activa
 5. Contexto estratégico
 6. **Ciclo Macro**: Fear & Greed, dominance trend, SMA200w slope, ATH distance, Pi Cycle Top
-7. Bitcoin Dominance ajustada
-8. Altcoins (detallado si BTC en zona, resumen breve si no)
+7. **Fundamentals BTC**: thesis_status + resumen + señales positivas/negativas
+8. Bitcoin Dominance ajustada
+9. Altcoins (detallado si BTC en zona, resumen breve si no) — cada coin incluye su thesis_status
 
 ### Telegram
 - Alerta enviada únicamente cuando la señal BTC **cambia** (sin spam)

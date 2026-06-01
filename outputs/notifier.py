@@ -303,25 +303,49 @@ def _imprimir_altcoin(alt: dict, sep_fino: str, fundamental: dict = None) -> Non
 
 
 def _imprimir_fundamental(fund: dict, coin: str, sep_fino: str, indent: str = "") -> None:
-    """Imprime el bloque de análisis fundamental de una coin."""
-    thesis      = fund.get("thesis_valida")
-    resumen     = fund.get("resumen", "")
-    positivas   = fund.get("señales_positivas", [])
-    negativas   = fund.get("señales_negativas", [])
-    fecha       = fund.get("fecha", "")
+    """
+    Imprime el bloque de análisis fundamental de una coin.
+
+    thesis_status — posibles valores y su significado de inversión:
+      ACUMULAR     Fundamentals refuerzan la thesis, buen momento de entrada
+      HOLD         Thesis válida, sin señales de salida, mantener posición
+      WATCH        Señales mixtas, monitorear de cerca antes de actuar
+      TAKE_PROFIT  Fundamentals sugieren techo de ciclo o sobrevaluación
+      STOP_LOSS    Thesis invalidada — hack, competidor, colapso de narrativa
+      SIN_DATOS    Información insuficiente
+    """
+    thesis    = fund.get("thesis_status", "SIN_DATOS")
+    resumen   = fund.get("resumen", "")
+    positivas = fund.get("señales_positivas", [])
+    negativas = fund.get("señales_negativas", [])
+    fecha     = fund.get("fecha", "")
 
     if indent == "":
-        # Sección de primer nivel (BTC standalone)
         print(f"\n{sep_fino}")
         print(f"  📰 FUNDAMENTALS — {coin}  ({fecha})")
         print(sep_fino)
     else:
-        # Subsección dentro de altcoin
         print(f"\n{indent}📰 Fundamentals  ({fecha})")
 
-    thesis_emojis = {True: "✅", False: "🔴", None: "⚪"}
-    thesis_labels = {True: "THESIS VÁLIDA", False: "THESIS EN RIESGO", None: "INFORMACIÓN INSUFICIENTE"}
-    print(f"{indent}  Thesis:  {thesis_emojis.get(thesis, '⚪')} {thesis_labels.get(thesis, '—')}")
+    thesis_emojis = {
+        "ACUMULAR":    "✅",
+        "HOLD":        "🔵",
+        "WATCH":       "🟡",
+        "TAKE_PROFIT": "🟠",
+        "STOP_LOSS":   "🔴",
+        "SIN_DATOS":   "⚪",
+    }
+    thesis_labels = {
+        "ACUMULAR":    "ACUMULAR — fundamentals refuerzan la thesis",
+        "HOLD":        "HOLD — thesis válida, mantener posición",
+        "WATCH":       "WATCH — señales mixtas, monitorear de cerca",
+        "TAKE_PROFIT": "TAKE PROFIT — señales de techo, considerar salida parcial",
+        "STOP_LOSS":   "STOP LOSS — thesis invalidada, salir para limitar daño",
+        "SIN_DATOS":   "SIN DATOS — información insuficiente",
+    }
+    emoji = thesis_emojis.get(thesis, "⚪")
+    label = thesis_labels.get(thesis, thesis)
+    print(f"{indent}  Thesis:  {emoji} {label}")
 
     if resumen:
         print(f"{indent}  Contexto: {resumen}")
@@ -486,10 +510,10 @@ def formatear_para_telegram(
 
     # Fundamentals BTC: resumen compacto
     if analisis_fundamental and "BTC" in analisis_fundamental:
-        fund_btc    = analisis_fundamental["BTC"]
-        thesis      = fund_btc.get("thesis_valida")
-        resumen     = fund_btc.get("resumen", "")
-        thesis_tag  = {True: "✅ válida", False: "🔴 en riesgo", None: "⚪ sin datos"}.get(thesis, "")
+        fund_btc   = analisis_fundamental["BTC"]
+        thesis     = fund_btc.get("thesis_status", "SIN_DATOS")
+        resumen    = fund_btc.get("resumen", "")
+        thesis_tag = _thesis_tag_telegram(thesis)
         if resumen:
             mensaje += f"\n\n*— Fundamentals BTC —*\nThesis: {thesis_tag}\n_{resumen}_"
 
@@ -507,6 +531,19 @@ def formatear_para_telegram(
             mensaje += _formatear_altcoin_telegram(alt, fund)
 
     return mensaje
+
+
+def _thesis_tag_telegram(thesis_status: str) -> str:
+    """Devuelve el tag compacto de thesis_status para mensajes Telegram."""
+    tags = {
+        "ACUMULAR":    "✅ ACUMULAR",
+        "HOLD":        "🔵 HOLD",
+        "WATCH":       "🟡 WATCH",
+        "TAKE_PROFIT": "🟠 TAKE PROFIT",
+        "STOP_LOSS":   "🔴 STOP LOSS",
+        "SIN_DATOS":   "⚪ sin datos",
+    }
+    return tags.get(thesis_status, "⚪ sin datos")
 
 
 def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None) -> str:
@@ -549,8 +586,7 @@ def _formatear_altcoin_telegram(alt: dict, fundamental: dict = None) -> str:
         lineas.append(f"P/S: {ps_ratio}x {emoji_ps} ({ps_interp.lower().replace('_', ' ')})")
 
     if fundamental:
-        thesis     = fundamental.get("thesis_valida")
-        thesis_tag = {True: "✅ válida", False: "🔴 en riesgo", None: "⚪ sin datos"}.get(thesis, "")
-        lineas.append(f"Thesis: {thesis_tag}")
+        thesis = fundamental.get("thesis_status", "SIN_DATOS")
+        lineas.append(f"Thesis: {_thesis_tag_telegram(thesis)}")
 
     return "\n".join(lineas)
